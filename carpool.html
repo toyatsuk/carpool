@@ -107,6 +107,7 @@
       マッチング結果
     </div>
     <div class="page-sub" id="list-sub">読み込み中...</div>
+    <div style="font-size:12px;color:#c62828;background:#fff0f0;border-radius:10px;padding:8px 12px;margin-bottom:1rem;">マッチング変更の必要な場合は、登録の削除を行ってください</div>
     <div id="match-result"><div class="loading">読み込み中...</div></div>
     <div class="bottom-bar">
       <button class="bar-btn" id="btn-refresh">↻ 更新</button>
@@ -126,28 +127,11 @@
       <div class="search-result" id="search-result"></div>
     </div>
     <div class="card" id="edit-form-card" style="display:none">
-      <label>役割</label>
-      <div class="toggle-group">
-        <button class="toggle-btn" id="e-btn-driver">🚗 車を出せる</button>
-        <button class="toggle-btn" id="e-btn-rider">💺 相乗りしたい</button>
-      </div>
-      <label>ピック場所</label>
-      <div class="toggle-group">
-        <button class="toggle-btn" id="e-btn-naruto">成東駅</button>
-        <button class="toggle-btn" id="e-btn-other">その他</button>
-      </div>
-      <div id="e-other-wrap" style="display:none;margin-top:8px">
-        <input type="text" id="e-other" placeholder="名称でマッチングします" autocomplete="off">
-      </div>
-      <label id="e-count-label">乗せられる人数</label>
-      <select id="e-count">
-        <option value="">選択してください</option>
-        <option>1人</option><option>2人</option><option>3人</option><option>4人</option><option>5人</option>
-      </select>
-      <label>メモ</label>
+      <div id="edit-summary" style="font-size:13px;color:#666;background:#f5f5f5;border-radius:8px;padding:10px 12px;margin-bottom:4px;line-height:1.8"></div>
+      <label>メモを編集</label>
       <textarea id="e-note" placeholder="例：23区から出発します、など"></textarea>
       <div class="error-msg" id="e-error"></div>
-      <button class="submit-btn" id="btn-save">保存する</button>
+      <button class="submit-btn" id="btn-save">メモを保存する</button>
       <button class="delete-btn" id="btn-delete">この登録を削除する</button>
     </div>
     <div class="bottom-bar">
@@ -184,7 +168,7 @@
     entries = [];
     snapshot.forEach(child => {
       const v = child.val();
-      entries.unshift({ ...v, origin: (v.origin||'').trim(), firebaseKey: child.key });
+      entries.push({ ...v, origin: (v.origin||'').trim(), firebaseKey: child.key });
     });
     renderMatching();
     const sub = document.getElementById('list-sub');
@@ -242,7 +226,7 @@
   }
 
   function buildCommentSection(people) {
-    const withNote = people.filter(p => p.note);
+    const withNote = people.filter(p => p.note).reverse();
     if (!withNote.length) return '';
     const rows = withNote.map(p =>
       '<div class="comment-row"><span class="comment-name">' + p.name + '</span>：' + p.note + '<span class="comment-ts">（' + (p.ts || '') + '）</span></div>'
@@ -366,43 +350,26 @@
     editKey = found.firebaseKey;
     editRoleVal = found.role;
     editOriginVal = found.origin === '成東駅' ? '成東駅' : 'その他';
-    document.getElementById('e-btn-driver').className = 'toggle-btn' + (found.role==='driver' ? ' sel-green' : '');
-    document.getElementById('e-btn-rider').className  = 'toggle-btn' + (found.role==='rider'  ? ' sel-blue'  : '');
-    document.getElementById('e-count-label').textContent = found.role==='rider' ? '乗りたい人数' : '乗せられる人数';
-    if (found.origin === '成東駅') {
-      document.getElementById('e-btn-naruto').className = 'toggle-btn sel-amber';
-      document.getElementById('e-btn-other').className  = 'toggle-btn';
-      document.getElementById('e-other-wrap').style.display = 'none';
-      document.getElementById('e-other').value = '';
-    } else {
-      document.getElementById('e-btn-naruto').className = 'toggle-btn';
-      document.getElementById('e-btn-other').className  = 'toggle-btn sel-amber';
-      document.getElementById('e-other-wrap').style.display = 'block';
-      document.getElementById('e-other').value = found.origin;
-    }
-    document.getElementById('e-count').value = found.count || '';
+    // 登録内容サマリー表示
+    const roleLabel = found.role === 'driver' ? '🚗 車を出せる' : '💺 相乗りしたい';
+    document.getElementById('edit-summary').innerHTML =
+      '<strong>' + found.name + '</strong><br>' +
+      roleLabel + '　📍 ' + found.origin + '　👥 ' + (found.count || '') ;
     document.getElementById('e-note').value  = found.note  || '';
     document.getElementById('e-error').style.display = 'none';
     formCard.style.display = 'block';
   });
 
-  document.getElementById('e-btn-driver').addEventListener('click', () => { editRoleVal='driver'; document.getElementById('e-btn-driver').className='toggle-btn sel-green'; document.getElementById('e-btn-rider').className='toggle-btn'; document.getElementById('e-count-label').textContent='乗せられる人数'; });
-  document.getElementById('e-btn-rider').addEventListener('click', () => { editRoleVal='rider'; document.getElementById('e-btn-driver').className='toggle-btn'; document.getElementById('e-btn-rider').className='toggle-btn sel-blue'; document.getElementById('e-count-label').textContent='乗りたい人数'; });
-  document.getElementById('e-btn-naruto').addEventListener('click', () => { editOriginVal='成東駅'; document.getElementById('e-btn-naruto').className='toggle-btn sel-amber'; document.getElementById('e-btn-other').className='toggle-btn'; document.getElementById('e-other-wrap').style.display='none'; });
-  document.getElementById('e-btn-other').addEventListener('click', () => { editOriginVal='その他'; document.getElementById('e-btn-naruto').className='toggle-btn'; document.getElementById('e-btn-other').className='toggle-btn sel-amber'; document.getElementById('e-other-wrap').style.display='block'; });
-
   document.getElementById('btn-save').addEventListener('click', async () => {
-    const errEl = document.getElementById('e-error');
-    errEl.style.display = 'none';
-    const name  = document.getElementById('e-search').value.trim();
-    const count = document.getElementById('e-count').value;
-    const note  = document.getElementById('e-note').value.trim();
-    const other = document.getElementById('e-other').value.trim();
-    const err = !editRoleVal ? '役割を選択してください' : !editOriginVal ? 'ピック場所を選択してください' : (editOriginVal==='その他'&&!other) ? 'ピック場所の詳細を入力してください' : !count ? '人数を選択してください' : '';
-    if (err) { errEl.textContent = err; errEl.style.display = 'block'; return; }
-    const origin = editOriginVal === 'その他' ? other : editOriginVal;
-    await set(ref(db, 'entries/' + editKey), { name, role: editRoleVal, origin, count, note, ts: nowTs() });
-    showToast('更新しました！');
+    const note = document.getElementById('e-note').value.trim();
+    // メモのみ更新（役割・ピック場所・人数はそのまま）
+    const entry = entries.find(e => e.firebaseKey === editKey);
+    if (!entry) return;
+    await set(ref(db, 'entries/' + editKey), {
+      name: entry.name, role: entry.role, origin: entry.origin,
+      count: entry.count, note: note, ts: nowTs()
+    });
+    showToast('メモを更新しました！');
     showScreen('screen-list');
   });
 
