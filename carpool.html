@@ -230,7 +230,15 @@
       const pool = riders.filter(r => r.origin.trim() === driver.origin.trim() && !matchedIds.has(r.firebaseKey));
       for (const rider of pool) {
         if (assigned.length >= seats) break;
-        assigned.push(rider);
+        const riderSeats = parseCount(rider.count);
+        // 乗りたい人数分まとめてアサイン（席が足りなければスキップ）
+        if (assigned.length + riderSeats <= seats) {
+          for (let i = 0; i < riderSeats; i++) assigned.push(rider);
+        } else {
+          // 残り席だけ埋める
+          const remaining = seats - assigned.length;
+          for (let i = 0; i < remaining; i++) assigned.push(rider);
+        }
         matchedIds.add(rider.firebaseKey);
       }
       result.push({ driver, seats, assigned });
@@ -262,8 +270,15 @@
       html = matched.map(({ driver, seats, assigned }) => {
         const isFull = assigned.length >= seats;
         const remaining = seats - assigned.length;
-        const riderRows = assigned.map(r =>
-          '<div class="rider-row"><span style="font-size:16px">💺</span><span class="rider-name">' + r.name + '</span><span class="rider-origin">' + r.origin + '</span></div>'
+        // 同一人物をまとめて「名前 ×N」表示
+        const riderCounts = [];
+        assigned.forEach(r => {
+          const found = riderCounts.find(x => x.firebaseKey === r.firebaseKey);
+          if (found) found.count++;
+          else riderCounts.push({ ...r, count: 1 });
+        });
+        const riderRows = riderCounts.map(r =>
+          '<div class="rider-row"><span style="font-size:16px">💺</span><span class="rider-name">' + r.name + (r.count > 1 ? ' <span style="font-size:12px;color:#888">×' + r.count + '</span>' : '') + '</span><span class="rider-origin">' + r.origin + '</span></div>'
         ).join('');
         const emptyRows = !isFull ? Array.from({length: remaining}).map(() =>
           '<div class="empty-seat"><span style="font-size:16px;opacity:0.25">💺</span><span class="empty-label">空き</span></div>'
