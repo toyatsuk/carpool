@@ -231,14 +231,8 @@
       for (const rider of pool) {
         if (assigned.length >= seats) break;
         const riderSeats = parseCount(rider.count);
-        // 乗りたい人数分まとめてアサイン（席が足りなければスキップ）
-        if (assigned.length + riderSeats <= seats) {
-          for (let i = 0; i < riderSeats; i++) assigned.push(rider);
-        } else {
-          // 残り席だけ埋める
-          const remaining = seats - assigned.length;
-          for (let i = 0; i < remaining; i++) assigned.push(rider);
-        }
+        const usedSeats = Math.min(riderSeats, seats - assigned.length);
+        for (let i = 0; i < usedSeats; i++) assigned.push(rider);
         matchedIds.add(rider.firebaseKey);
       }
       result.push({ driver, seats, assigned });
