@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>相乗りマッチング - GardenFestival</title>
+<title>澤家GardenFestival2026 あいのりマッチング</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; background: #f5f5f5; color: #1a1a1a; }
@@ -86,13 +86,13 @@
   <div class="screen active" id="screen-form">
     <div class="page-title">
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v3"/><rect x="9" y="11" width="14" height="10" rx="1"/><circle cx="12" cy="21" r="1"/><circle cx="20" cy="21" r="1"/></svg>
-      相乗り登録
+      澤家GardenFestival2026
     </div>
-    <div class="page-sub">GardenFestival 参加者向け</div>
+    <div class="page-sub">あいのりマッチングアプリ</div>
 
     <div class="card">
       <label>お名前</label>
-      <input type="text" id="f-name" placeholder="例：田中 太郎" maxlength="30" autocomplete="off">
+      <input type="text" id="f-name" placeholder="例：山武 太郎" maxlength="30" autocomplete="off">
 
       <label>役割</label>
       <div class="toggle-group">
@@ -205,31 +205,33 @@
     const drivers = all.filter(e => e.role === 'driver');
     const riders  = all.filter(e => e.role === 'rider');
 
+    // 成東駅ドライバーを先に表示
     const sortedDrivers = [
       ...drivers.filter(d => d.origin.includes('成東駅')),
       ...drivers.filter(d => !d.origin.includes('成東駅'))
     ];
-    const sortedRiders = [
-      ...riders.filter(r => r.origin.includes('成東駅')),
-      ...riders.filter(r => !r.origin.includes('成東駅'))
-    ];
 
-    const pool = [...sortedRiders];
     const result = [];
+    const matchedRiderIds = new Set();
 
     for (const driver of sortedDrivers) {
       const seats = parseCount(driver.count);
       const assigned = [];
-      // 同じピック場所を優先
-      for (let i = pool.length - 1; i >= 0; i--) {
+      // ピック場所が同じ乗客のみ対象
+      const sameOriginRiders = riders.filter(r =>
+        r.origin === driver.origin && !matchedRiderIds.has(r.firebaseKey)
+      );
+      for (const rider of sameOriginRiders) {
         if (assigned.length >= seats) break;
-        if (pool[i].origin === driver.origin) assigned.push(pool.splice(i, 1)[0]);
+        assigned.push(rider);
+        matchedRiderIds.add(rider.firebaseKey);
       }
-      // 残り枠を埋める
-      while (assigned.length < seats && pool.length > 0) assigned.push(pool.shift());
       result.push({ driver, seats, assigned });
     }
-    return { matched: result, unmatched: pool };
+
+    // どのドライバーともマッチしなかった乗客
+    const unmatched = riders.filter(r => !matchedRiderIds.has(r.firebaseKey));
+    return { matched: result, unmatched };
   }
 
   function renderMatching() {
