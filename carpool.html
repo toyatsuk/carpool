@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>相乗りマッチング - GardenFestival</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; background: #f5f5f5; color: #1a1a1a; }
+  .container { max-width: 480px; margin: 0 auto; padding: 1rem 1rem 5rem; }
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  .page-title { font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; padding-top: 1rem; }
+  .page-sub { font-size: 13px; color: #666; margin-bottom: 1.5rem; }
+
+  .card { background: #fff; border-radius: 14px; padding: 1rem 1.25rem; margin-bottom: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+  label { font-size: 13px; color: #666; display: block; margin-bottom: 4px; margin-top: 14px; }
+  label:first-of-type { margin-top: 0; }
+  input, select, textarea {
+    width: 100%; font-size: 16px; padding: 10px 12px;
+    border: 1px solid #ddd; border-radius: 10px;
+    background: #fafafa; outline: none;
+    -webkit-appearance: none; appearance: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: #888; background: #fff; }
+  textarea { height: 72px; resize: vertical; }
+  select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+
+  .toggle-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+  .toggle-btn { padding: 11px 6px; border: 1.5px solid #ddd; border-radius: 10px; background: #fafafa; color: #444; font-size: 14px; cursor: pointer; text-align: center; transition: all 0.15s; }
+  .toggle-btn.sel-green { background: #e8f5e9; border-color: #2e7d32; color: #1b5e20; font-weight: 600; }
+  .toggle-btn.sel-blue  { background: #e3f2fd; border-color: #1565c0; color: #0d47a1; font-weight: 600; }
+  .toggle-btn.sel-amber { background: #fff8e1; border-color: #f57f17; color: #e65100; font-weight: 600; }
+
+  .error-msg { font-size: 12px; color: #c62828; margin-top: 6px; display: none; }
+  .submit-btn {
+    width: 100%; padding: 14px; background: #1a1a1a; color: #fff;
+    border: none; border-radius: 12px; font-size: 16px; font-weight: 600;
+    cursor: pointer; margin-top: 0.75rem; letter-spacing: 0.02em;
+  }
+  .submit-btn:active { opacity: 0.85; transform: scale(0.99); }
+  .text-link { background: none; border: none; color: #888; font-size: 13px; cursor: pointer; padding: 10px; display: block; margin: 0 auto; text-align: center; }
+
+  /* マッチング画面 */
+  .match-card { background: #fff; border-radius: 14px; padding: 1rem 1.25rem; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); transition: opacity 0.2s; }
+  .match-card.full { opacity: 0.4; }
+  .pickup-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; background: #fff8e1; color: #e65100; border-radius: 20px; padding: 3px 9px; font-weight: 600; margin-bottom: 10px; }
+  .driver-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .driver-name { font-size: 16px; font-weight: 600; }
+  .seats-badge { margin-left: auto; font-size: 12px; padding: 3px 10px; border-radius: 20px; font-weight: 600; }
+  .seats-badge.open { background: #e8f5e9; color: #1b5e20; }
+  .seats-badge.full-badge { background: #f0f0f0; color: #888; }
+  .divider { border: none; border-top: 1px solid #f0f0f0; margin: 8px 0; }
+  .rider-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+  .rider-name { font-size: 14px; color: #1a1a1a; }
+  .rider-origin { font-size: 12px; color: #999; margin-left: auto; }
+  .empty-seat { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+  .empty-label { font-size: 13px; color: #ccc; }
+  .driver-note { font-size: 12px; color: #888; margin-top: 8px; padding-top: 8px; border-top: 1px solid #f0f0f0; }
+
+  .unmatched-box { background: #fff; border-radius: 14px; padding: 1rem 1.25rem; margin-top: 1.5rem; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+  .unmatched-title { font-size: 13px; color: #888; margin-bottom: 10px; display: flex; align-items: center; gap: 5px; }
+  .unmatched-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; background: #f5f5f5; border-radius: 8px; padding: 6px 10px; margin: 3px 3px 3px 0; }
+
+  .empty-msg { text-align: center; padding: 3rem 0; font-size: 14px; color: #aaa; }
+
+  .bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #eee; padding: 0.75rem 1rem; display: flex; gap: 10px; max-width: 480px; margin: 0 auto; }
+  .bar-btn { flex: 1; padding: 12px; border: 1.5px solid #ddd; border-radius: 10px; background: #fff; color: #1a1a1a; font-size: 14px; cursor: pointer; text-align: center; }
+  .bar-btn.primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; font-weight: 600; }
+  .bar-btn:active { opacity: 0.8; }
+
+  .toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: #1b5e20; color: #fff; padding: 10px 20px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 99; white-space: nowrap; }
+
+  .loading { text-align: center; padding: 2rem; color: #aaa; font-size: 14px; }
+
+  /* アイコン（SVG inline） */
+  .icon { width: 18px; height: 18px; display: inline-block; vertical-align: -3px; }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- 登録画面 -->
+  <div class="screen active" id="screen-form">
+    <div class="page-title">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v3"/><rect x="9" y="11" width="14" height="10" rx="1"/><circle cx="12" cy="21" r="1"/><circle cx="20" cy="21" r="1"/></svg>
+      相乗り登録
+    </div>
+    <div class="page-sub">GardenFestival 参加者向け</div>
+
+    <div class="card">
+      <label>お名前</label>
+      <input type="text" id="f-name" placeholder="例：田中 太郎" maxlength="30" autocomplete="off">
+
+      <label>役割</label>
+      <div class="toggle-group">
+        <button class="toggle-btn" id="btn-driver">🚗 車を出せる</button>
+        <button class="toggle-btn" id="btn-rider">💺 相乗りしたい</button>
+      </div>
+
+      <label>ピック場所</label>
+      <div class="toggle-group">
+        <button class="toggle-btn" id="btn-naruto">成東駅</button>
+        <button class="toggle-btn" id="btn-other">その他</button>
+      </div>
+      <div id="other-wrap" style="display:none;margin-top:8px">
+        <input type="text" id="f-other" placeholder="例：八街駅など" autocomplete="off">
+      </div>
+
+      <label id="count-label">乗せられる人数</label>
+      <select id="f-count">
+        <option value="">選択してください</option>
+        <option>1人</option><option>2人</option><option>3人</option><option>4人</option><option>5人</option>
+      </select>
+
+      <label>メモ（任意）</label>
+      <textarea id="f-note" placeholder="例：23区から出発します、など"></textarea>
+
+      <div class="error-msg" id="f-error"></div>
+      <button class="submit-btn" id="btn-submit">登録してマッチングを見る →</button>
+    </div>
+    <button class="text-link" id="btn-view-only">登録せずにマッチングを見る</button>
+  </div>
+
+  <!-- マッチング結果画面 -->
+  <div class="screen" id="screen-list">
+    <div class="page-title">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+      マッチング結果
+    </div>
+    <div class="page-sub" id="list-sub">読み込み中...</div>
+    <div id="match-result"><div class="loading">読み込み中...</div></div>
+    <div class="bottom-bar">
+      <button class="bar-btn" id="btn-refresh">↻ 更新</button>
+      <button class="bar-btn primary" id="btn-go-form">＋ 登録する</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, push, onValue, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDEJscf8STjYHOIcsFn6Fmxut098SiUf3U",
+    authDomain: "gardenfestival260606.firebaseapp.com",
+    databaseURL: "https://gardenfestival260606-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "gardenfestival260606",
+    storageBucket: "gardenfestival260606.firebasestorage.app",
+    messagingSenderId: "1622246208634",
+    appId: "1:1622246208634:web:ae508aa1badaf3c1711fc3"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+  const entriesRef = ref(db, 'entries');
+
+  let entries = [];
+  let roleVal = '';
+  let originVal = '';
+
+  // リアルタイム同期
+  onValue(entriesRef, (snapshot) => {
+    entries = [];
+    snapshot.forEach(child => {
+      entries.unshift({ ...child.val(), firebaseKey: child.key });
+    });
+    renderMatching();
+    const sub = document.getElementById('list-sub');
+    if (sub) {
+      const d = entries.filter(e => e.role === 'driver').length;
+      const r = entries.filter(e => e.role === 'rider').length;
+      sub.textContent = `ドライバー ${d}人 ／ 相乗り希望 ${r}人`;
+    }
+  });
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.style.opacity = '1';
+    setTimeout(() => t.style.opacity = '0', 2000);
+  }
+
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  function updateCountLabel() {
+    document.getElementById('count-label').textContent =
+      roleVal === 'rider' ? '乗りたい人数' : '乗せられる人数';
+  }
+
+  function parseCount(str) {
+    const m = str ? str.match(/\d+/) : null;
+    return m ? parseInt(m[0]) : 1;
+  }
+
+  function runMatching(all) {
+    const drivers = all.filter(e => e.role === 'driver');
+    const riders  = all.filter(e => e.role === 'rider');
+
+    const sortedDrivers = [
+      ...drivers.filter(d => d.origin.includes('成東駅')),
+      ...drivers.filter(d => !d.origin.includes('成東駅'))
+    ];
+    const sortedRiders = [
+      ...riders.filter(r => r.origin.includes('成東駅')),
+      ...riders.filter(r => !r.origin.includes('成東駅'))
+    ];
+
+    const pool = [...sortedRiders];
+    const result = [];
+
+    for (const driver of sortedDrivers) {
+      const seats = parseCount(driver.count);
+      const assigned = [];
+      // 同じピック場所を優先
+      for (let i = pool.length - 1; i >= 0; i--) {
+        if (assigned.length >= seats) break;
+        if (pool[i].origin === driver.origin) assigned.push(pool.splice(i, 1)[0]);
+      }
+      // 残り枠を埋める
+      while (assigned.length < seats && pool.length > 0) assigned.push(pool.shift());
+      result.push({ driver, seats, assigned });
+    }
+    return { matched: result, unmatched: pool };
+  }
+
+  function renderMatching() {
+    const el = document.getElementById('match-result');
+    if (!el) return;
+
+    if (!entries.length) {
+      el.innerHTML = '<div class="empty-msg">まだ登録がありません</div>';
+      return;
+    }
+
+    const { matched, unmatched } = runMatching(entries);
+
+    if (!matched.length) {
+      el.innerHTML = '<div class="empty-msg">ドライバーの登録待ちです</div>';
+    } else {
+      el.innerHTML = matched.map(({ driver, seats, assigned }) => {
+        const isFull = assigned.length >= seats;
+        const remaining = seats - assigned.length;
+
+        const riderRows = assigned.map(r => `
+          <div class="rider-row">
+            <span style="font-size:16px">💺</span>
+            <span class="rider-name">${r.name}</span>
+            <span class="rider-origin">${r.origin}</span>
+          </div>
+        `).join('');
+
+        const emptyRows = !isFull ? Array.from({length: remaining}).map(() => `
+          <div class="empty-seat">
+            <span style="font-size:16px;opacity:0.25">💺</span>
+            <span class="empty-label">空き</span>
+          </div>
+        `).join('') : '';
+
+        const badge = isFull
+          ? `<span class="seats-badge full-badge">満席</span>`
+          : `<span class="seats-badge open">あと ${remaining}席</span>`;
+
+        return `
+          <div class="match-card ${isFull ? 'full' : ''}">
+            <div class="pickup-tag">📍 ${driver.origin}</div>
+            <div class="driver-row">
+              <span style="font-size:18px">🚗</span>
+              <span class="driver-name">${driver.name}</span>
+              ${badge}
+            </div>
+            <hr class="divider">
+            ${riderRows}${emptyRows}
+            ${driver.note ? `<div class="driver-note">💬 ${driver.note}</div>` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    if (unmatched.length) {
+      const chips = unmatched.map(r => `
+        <span class="unmatched-chip">💺 ${r.name} <span style="font-size:11px;color:#aaa">${r.origin}</span></span>
+      `).join('');
+      el.innerHTML += `
+        <div class="unmatched-box">
+          <div class="unmatched-title">⏳ マッチング待ち（${unmatched.length}人）</div>
+          ${chips}
+        </div>
+      `;
+    }
+  }
+
+  function resetForm() {
+    document.getElementById('f-name').value  = '';
+    document.getElementById('f-count').value = '';
+    document.getElementById('f-note').value  = '';
+    document.getElementById('f-other').value = '';
+    document.getElementById('other-wrap').style.display = 'none';
+    document.getElementById('f-error').style.display = 'none';
+    roleVal = ''; originVal = '';
+    ['btn-driver','btn-rider','btn-naruto','btn-other'].forEach(id =>
+      document.getElementById(id).className = 'toggle-btn');
+    document.getElementById('count-label').textContent = '乗せられる人数';
+  }
+
+  // ボタンイベント
+  document.getElementById('btn-driver').addEventListener('click', () => {
+    roleVal = 'driver';
+    document.getElementById('btn-driver').className = 'toggle-btn sel-green';
+    document.getElementById('btn-rider').className  = 'toggle-btn';
+    updateCountLabel();
+  });
+  document.getElementById('btn-rider').addEventListener('click', () => {
+    roleVal = 'rider';
+    document.getElementById('btn-driver').className = 'toggle-btn';
+    document.getElementById('btn-rider').className  = 'toggle-btn sel-blue';
+    updateCountLabel();
+  });
+  document.getElementById('btn-naruto').addEventListener('click', () => {
+    originVal = '成東駅';
+    document.getElementById('btn-naruto').className = 'toggle-btn sel-amber';
+    document.getElementById('btn-other').className  = 'toggle-btn';
+    document.getElementById('other-wrap').style.display = 'none';
+  });
+  document.getElementById('btn-other').addEventListener('click', () => {
+    originVal = 'その他';
+    document.getElementById('btn-naruto').className = 'toggle-btn';
+    document.getElementById('btn-other').className  = 'toggle-btn sel-amber';
+    document.getElementById('other-wrap').style.display = 'block';
+  });
+
+  document.getElementById('btn-submit').addEventListener('click', async () => {
+    const errEl = document.getElementById('f-error');
+    errEl.style.display = 'none';
+    const name  = document.getElementById('f-name').value.trim();
+    const count = document.getElementById('f-count').value;
+    const note  = document.getElementById('f-note').value.trim();
+    const other = document.getElementById('f-other').value.trim();
+
+    const err = !name ? 'お名前を入力してください'
+      : !roleVal   ? '役割を選択してください'
+      : !originVal ? 'ピック場所を選択してください'
+      : originVal === 'その他' && !other ? 'ピック場所の詳細を入力してください'
+      : !count     ? '人数を選択してください'
+      : '';
+    if (err) { errEl.textContent = err; errEl.style.display = 'block'; return; }
+
+    const origin = originVal === 'その他' ? `その他（${other}）` : originVal;
+    await push(entriesRef, {
+      name, role: roleVal, origin, count, note,
+      ts: new Date().toLocaleString('ja-JP', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})
+    });
+    showToast('登録しました！');
+    resetForm();
+    showScreen('screen-list');
+  });
+
+  document.getElementById('btn-view-only').addEventListener('click', () => showScreen('screen-list'));
+  document.getElementById('btn-go-form').addEventListener('click', () => showScreen('screen-form'));
+  document.getElementById('btn-refresh').addEventListener('click', () => showToast('最新データを表示中'));
+
+</script>
+</body>
+</html>
