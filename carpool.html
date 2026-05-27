@@ -305,9 +305,11 @@
       }).join('');
     }
     if (unmatched.length) {
-      const rows = unmatched.map(r =>
-        '<div class="rider-row" style="padding:5px 0"><span style="font-size:16px">💺</span><span class="rider-name">' + r.name + '</span><span class="rider-origin">' + r.origin + '</span></div>'
-      ).join('');
+      const rows = unmatched.map(r => {
+        const total = parseCount(r.count);
+        const label = total > 1 ? ' <span style="font-size:12px;color:#888">×' + total + '</span>' : '';
+        return '<div class="rider-row" style="padding:5px 0"><span style="font-size:16px">💺</span><span class="rider-name">' + r.name + label + '</span><span class="rider-origin">' + r.origin + '</span></div>';
+      }).join('');
       const commentSection = buildCommentSection(unmatched);
       html += '<div class="unmatched-box"><div class="unmatched-title">⏳ マッチング待ち（' + unmatched.length + '人）</div>' + rows + commentSection + '</div>';
     }
