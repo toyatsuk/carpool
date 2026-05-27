@@ -253,7 +253,8 @@
     let html = '';
     if (!matched.length) {
       html = '<div class="empty-msg">ドライバーの登録待ちです</div>';
-    } else {
+    }
+    if (matched.length) {
       html = matched.map(({ driver, seats, assigned }) => {
         const isFull = assigned.length >= seats;
         const remaining = seats - assigned.length;
