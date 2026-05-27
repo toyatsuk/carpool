@@ -28,6 +28,7 @@
   .submit-btn { width: 100%; padding: 14px; background: #1a1a1a; color: #fff; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 0.75rem; }
   .submit-btn:active { opacity: 0.85; }
   .text-link { background: none; border: none; color: #888; font-size: 13px; cursor: pointer; padding: 10px; display: block; margin: 0 auto; text-align: center; }
+  .notice { font-size: 12px; color: #c62828; background: #fff0f0; border-radius: 10px; padding: 8px 12px; margin-bottom: 1rem; }
   .match-card { background: #fff; border-radius: 14px; padding: 1rem 1.25rem; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
   .match-card.full { opacity: 0.4; }
   .pickup-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; background: #fff8e1; color: #e65100; border-radius: 20px; padding: 3px 9px; font-weight: 600; margin-bottom: 10px; }
@@ -54,8 +55,11 @@
   .bar-btn { flex: 1; padding: 12px 6px; border: 1.5px solid #ddd; border-radius: 10px; background: #fff; color: #1a1a1a; font-size: 13px; cursor: pointer; text-align: center; }
   .bar-btn.primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; font-weight: 600; }
   .bar-btn:active { opacity: 0.8; }
-  .search-result { background: #f0f7ff; border: 1px solid #b3d4f5; border-radius: 10px; padding: 10px 12px; margin-top: 8px; font-size: 14px; color: #1565c0; display: none; }
-  .search-result.notfound { background: #fff0f0; border-color: #f5c6c6; color: #c62828; }
+  .search-result { border-radius: 10px; padding: 10px 12px; margin-top: 8px; font-size: 14px; display: none; }
+  .search-result.found { background: #f0f7ff; border: 1px solid #b3d4f5; color: #1565c0; }
+  .search-result.notfound { background: #fff0f0; border: 1px solid #f5c6c6; color: #c62828; }
+  .edit-summary { font-size: 13px; color: #444; background: #f5f5f5; border-radius: 8px; padding: 10px 12px; margin-bottom: 4px; line-height: 1.8; }
+  .disabled-select { opacity: 0.5; pointer-events: none; }
   .delete-btn { width: 100%; padding: 12px; background: #fff; color: #c62828; border: 1.5px solid #f5c6c6; border-radius: 12px; font-size: 15px; cursor: pointer; margin-top: 8px; }
   .toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: #1b5e20; color: #fff; padding: 10px 20px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 99; white-space: nowrap; }
   .icon { width: 18px; height: 18px; display: inline-block; vertical-align: -3px; }
@@ -92,7 +96,7 @@
         <option value="">選択してください</option>
         <option>1人</option><option>2人</option><option>3人</option><option>4人</option><option>5人</option>
       </select>
-      <label>メモ（任意）</label>
+      <label>メッセージ（任意）</label>
       <textarea id="f-note" placeholder="例：23区から出発します、など"></textarea>
       <div class="error-msg" id="f-error"></div>
       <button class="submit-btn" id="btn-submit">登録してマッチングを見る →</button>
@@ -107,7 +111,7 @@
       マッチング結果
     </div>
     <div class="page-sub" id="list-sub">読み込み中...</div>
-    <div style="font-size:12px;color:#c62828;background:#fff0f0;border-radius:10px;padding:8px 12px;margin-bottom:1rem;">マッチング変更の必要な場合は、登録の削除を行ってください</div>
+    <div class="notice">マッチング変更の必要な場合は、登録の削除を行ってください</div>
     <div id="match-result"><div class="loading">読み込み中...</div></div>
     <div class="bottom-bar">
       <button class="bar-btn" id="btn-refresh">↻ 更新</button>
@@ -127,11 +131,21 @@
       <div class="search-result" id="search-result"></div>
     </div>
     <div class="card" id="edit-form-card" style="display:none">
-      <div id="edit-summary" style="font-size:13px;color:#666;background:#f5f5f5;border-radius:8px;padding:10px 12px;margin-bottom:4px;line-height:1.8"></div>
-      <label>メモを編集</label>
-      <textarea id="e-note" placeholder="例：23区から出発します、など"></textarea>
+      <div class="edit-summary" id="edit-summary"></div>
+
+      <!-- ドライバーのみ：人数増加 -->
+      <div id="e-count-wrap" style="display:none">
+        <label id="e-count-label">乗せられる人数（増加のみ）</label>
+        <select id="e-count">
+          <option value="">選択してください</option>
+          <option>1人</option><option>2人</option><option>3人</option><option>4人</option><option>5人</option>
+        </select>
+      </div>
+
+      <label>メッセージ</label>
+      <textarea id="e-note" placeholder="最新のメッセージのみ記載されます"></textarea>
       <div class="error-msg" id="e-error"></div>
-      <button class="submit-btn" id="btn-save">メモを保存する</button>
+      <button class="submit-btn" id="btn-save">保存する</button>
       <button class="delete-btn" id="btn-delete">この登録を削除する</button>
     </div>
     <div class="bottom-bar">
@@ -162,7 +176,7 @@
 
   let entries = [];
   let roleVal = '', originVal = '';
-  let editKey = '', editRoleVal = '', editOriginVal = '';
+  let editKey = '', editCurrentCount = 0;
 
   onValue(entriesRef, (snapshot) => {
     entries = [];
@@ -226,9 +240,14 @@
   }
 
   function buildCommentSection(people) {
-    const withNote = people.filter(p => p.note).reverse();
-    if (!withNote.length) return '';
-    const rows = withNote.map(p =>
+    // 重複除去（同一firebaseKeyは1件のみ）し、新しい順
+    const seen = new Set();
+    const unique = [];
+    [...people].reverse().forEach(p => {
+      if (p.note && !seen.has(p.firebaseKey)) { seen.add(p.firebaseKey); unique.push(p); }
+    });
+    if (!unique.length) return '';
+    const rows = unique.map(p =>
       '<div class="comment-row"><span class="comment-name">' + p.name + '</span>：' + p.note + '<span class="comment-ts">（' + (p.ts || '') + '）</span></div>'
     ).join('');
     return '<div class="comment-section">' + rows + '</div>';
@@ -237,7 +256,6 @@
   function renderMatching() {
     const el = document.getElementById('match-result');
     if (!el) return;
-    console.log('renderMatching called, entries:', entries.length, entries.map(e=>e.name));
     if (!entries.length) { el.innerHTML = '<div class="empty-msg">まだ登録がありません</div>'; return; }
     const { matched, unmatched } = runMatching(entries);
     let html = '';
@@ -248,15 +266,14 @@
       html = matched.map(({ driver, seats, assigned }) => {
         const isFull = assigned.length >= seats;
         const remaining = seats - assigned.length;
-        // 同一人物をまとめて「名前 ×N」表示
         const riderCounts = [];
         assigned.forEach(r => {
           const found = riderCounts.find(x => x.firebaseKey === r.firebaseKey);
-          if (found) found.count++;
-          else riderCounts.push({ ...r, count: 1 });
+          if (found) found.cnt++;
+          else riderCounts.push({ ...r, cnt: 1 });
         });
         const riderRows = riderCounts.map(r =>
-          '<div class="rider-row"><span style="font-size:16px">💺</span><span class="rider-name">' + r.name + (r.count > 1 ? ' <span style="font-size:12px;color:#888">×' + r.count + '</span>' : '') + '</span><span class="rider-origin">' + r.origin + '</span></div>'
+          '<div class="rider-row"><span style="font-size:16px">💺</span><span class="rider-name">' + r.name + (r.cnt > 1 ? ' <span style="font-size:12px;color:#888">×' + r.cnt + '</span>' : '') + '</span><span class="rider-origin">' + r.origin + '</span></div>'
         ).join('');
         const emptyRows = !isFull ? Array.from({length: remaining}).map(() =>
           '<div class="empty-seat"><span style="font-size:16px;opacity:0.25">💺</span><span class="empty-label">空き</span></div>'
@@ -296,8 +313,8 @@
   }
 
   // 登録フォーム
-  document.getElementById('btn-driver').addEventListener('click', () => { roleVal = 'driver'; document.getElementById('btn-driver').className='toggle-btn sel-green'; document.getElementById('btn-rider').className='toggle-btn'; document.getElementById('count-label').textContent='乗せられる人数'; });
-  document.getElementById('btn-rider').addEventListener('click', () => { roleVal = 'rider'; document.getElementById('btn-driver').className='toggle-btn'; document.getElementById('btn-rider').className='toggle-btn sel-blue'; document.getElementById('count-label').textContent='乗りたい人数'; });
+  document.getElementById('btn-driver').addEventListener('click', () => { roleVal='driver'; document.getElementById('btn-driver').className='toggle-btn sel-green'; document.getElementById('btn-rider').className='toggle-btn'; document.getElementById('count-label').textContent='乗せられる人数'; });
+  document.getElementById('btn-rider').addEventListener('click', () => { roleVal='rider'; document.getElementById('btn-driver').className='toggle-btn'; document.getElementById('btn-rider').className='toggle-btn sel-blue'; document.getElementById('count-label').textContent='乗りたい人数'; });
   document.getElementById('btn-naruto').addEventListener('click', () => { originVal='成東駅'; document.getElementById('btn-naruto').className='toggle-btn sel-amber'; document.getElementById('btn-other').className='toggle-btn'; document.getElementById('other-wrap').style.display='none'; });
   document.getElementById('btn-other').addEventListener('click', () => { originVal='その他'; document.getElementById('btn-naruto').className='toggle-btn'; document.getElementById('btn-other').className='toggle-btn sel-amber'; document.getElementById('other-wrap').style.display='block'; });
 
@@ -319,7 +336,7 @@
   });
 
   document.getElementById('btn-view-only').addEventListener('click', () => { renderMatching(); showScreen('screen-list'); });
-  document.getElementById('btn-go-form').addEventListener('click', () => { renderMatching(); showScreen('screen-list'); setTimeout(() => showScreen('screen-form'), 0); });
+  document.getElementById('btn-go-form').addEventListener('click', () => showScreen('screen-form'));
   document.getElementById('btn-refresh').addEventListener('click', () => { renderMatching(); showToast('最新データを表示中'); });
 
   // 編集画面
@@ -329,7 +346,7 @@
     document.getElementById('edit-form-card').style.display = 'none';
     showScreen('screen-edit');
   });
-  document.getElementById('btn-edit-back').addEventListener('click', () => showScreen('screen-list'));
+  document.getElementById('btn-edit-back').addEventListener('click', () => { renderMatching(); showScreen('screen-list'); });
 
   document.getElementById('btn-search').addEventListener('click', () => {
     const name = document.getElementById('e-search').value.trim();
@@ -344,32 +361,63 @@
       formCard.style.display = 'none';
       return;
     }
-    resultEl.className = 'search-result';
+    resultEl.className = 'search-result found';
     resultEl.textContent = '「' + found.name + '」さんの登録が見つかりました';
     resultEl.style.display = 'block';
     editKey = found.firebaseKey;
-    editRoleVal = found.role;
-    editOriginVal = found.origin === '成東駅' ? '成東駅' : 'その他';
-    // 登録内容サマリー表示
+    editCurrentCount = parseCount(found.count);
+
+    // サマリー表示
     const roleLabel = found.role === 'driver' ? '🚗 車を出せる' : '💺 相乗りしたい';
     document.getElementById('edit-summary').innerHTML =
-      '<strong>' + found.name + '</strong><br>' +
-      roleLabel + '　📍 ' + found.origin + '　👥 ' + (found.count || '') ;
-    document.getElementById('e-note').value  = found.note  || '';
+      '<strong>' + found.name + '</strong><br>' + roleLabel + '　📍 ' + found.origin + '　👥 ' + (found.count || '');
+
+    // ドライバーのみ人数変更可（増加のみ）
+    const countWrap = document.getElementById('e-count-wrap');
+    if (found.role === 'driver') {
+      countWrap.style.display = 'block';
+      document.getElementById('e-count-label').textContent = '乗せられる人数（現在：' + found.count + '、増加のみ可）';
+      // 現在の人数以下の選択肢をdisabledに
+      const sel = document.getElementById('e-count');
+      sel.value = found.count || '';
+      Array.from(sel.options).forEach(opt => {
+        const v = parseCount(opt.value);
+        opt.disabled = opt.value !== '' && v < editCurrentCount;
+      });
+    } else {
+      countWrap.style.display = 'none';
+    }
+
+    document.getElementById('e-note').value = found.note || '';
     document.getElementById('e-error').style.display = 'none';
     formCard.style.display = 'block';
   });
 
   document.getElementById('btn-save').addEventListener('click', async () => {
-    const note = document.getElementById('e-note').value.trim();
-    // メモのみ更新（役割・ピック場所・人数はそのまま）
     const entry = entries.find(e => e.firebaseKey === editKey);
     if (!entry) return;
+    const note = document.getElementById('e-note').value.trim();
+    let count = entry.count;
+    if (entry.role === 'driver') {
+      const newCount = document.getElementById('e-count').value;
+      if (!newCount) {
+        document.getElementById('e-error').textContent = '人数を選択してください';
+        document.getElementById('e-error').style.display = 'block';
+        return;
+      }
+      if (parseCount(newCount) < editCurrentCount) {
+        document.getElementById('e-error').textContent = '人数を減らすことはできません';
+        document.getElementById('e-error').style.display = 'block';
+        return;
+      }
+      count = newCount;
+    }
     await set(ref(db, 'entries/' + editKey), {
       name: entry.name, role: entry.role, origin: entry.origin,
-      count: entry.count, note: note, ts: nowTs()
+      count: count, note: note, ts: nowTs()
     });
-    showToast('メモを更新しました！');
+    showToast('更新しました！');
+    renderMatching();
     showScreen('screen-list');
   });
 
@@ -377,6 +425,7 @@
     if (!confirm('この登録を削除しますか？')) return;
     await remove(ref(db, 'entries/' + editKey));
     showToast('削除しました');
+    renderMatching();
     showScreen('screen-list');
   });
 </script>
