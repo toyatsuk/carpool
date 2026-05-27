@@ -229,9 +229,12 @@
       for (const rider of pool) {
         if (assigned.length >= seats) break;
         const riderSeats = parseCount(rider.count);
-        const usedSeats = Math.min(riderSeats, seats - assigned.length);
-        for (let i = 0; i < usedSeats; i++) assigned.push(rider);
-        matchedIds.add(rider.firebaseKey);
+        // 乗りたい人数分の空きがある場合のみマッチング
+        if (assigned.length + riderSeats <= seats) {
+          for (let i = 0; i < riderSeats; i++) assigned.push(rider);
+          matchedIds.add(rider.firebaseKey);
+        }
+        // 空きが足りない場合はスキップ（マッチング待ちへ）
       }
       result.push({ driver, seats, assigned });
     }
