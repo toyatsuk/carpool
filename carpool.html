@@ -182,7 +182,10 @@
 
   onValue(entriesRef, (snapshot) => {
     entries = [];
-    snapshot.forEach(child => entries.unshift({ ...child.val(), firebaseKey: child.key }));
+    snapshot.forEach(child => {
+      const v = child.val();
+      entries.unshift({ ...v, origin: (v.origin||'').trim(), firebaseKey: child.key });
+    });
     renderMatching();
     const sub = document.getElementById('list-sub');
     if (sub) {
@@ -224,7 +227,7 @@
     for (const driver of sortedDrivers) {
       const seats = parseCount(driver.count);
       const assigned = [];
-      const pool = riders.filter(r => r.origin === driver.origin && !matchedIds.has(r.firebaseKey));
+      const pool = riders.filter(r => r.origin.trim() === driver.origin.trim() && !matchedIds.has(r.firebaseKey));
       for (const rider of pool) {
         if (assigned.length >= seats) break;
         assigned.push(rider);
@@ -248,6 +251,7 @@
   function renderMatching() {
     const el = document.getElementById('match-result');
     if (!el) return;
+    console.log('renderMatching called, entries:', entries.length, entries.map(e=>e.name));
     if (!entries.length) { el.innerHTML = '<div class="empty-msg">まだ登録がありません</div>'; return; }
     const { matched, unmatched } = runMatching(entries);
     let html = '';
@@ -317,12 +321,13 @@
     await push(entriesRef, { name, role: roleVal, origin, count, note, ts: nowTs() });
     showToast('登録しました！');
     resetForm();
+    renderMatching();
     showScreen('screen-list');
   });
 
-  document.getElementById('btn-view-only').addEventListener('click', () => showScreen('screen-list'));
-  document.getElementById('btn-go-form').addEventListener('click', () => showScreen('screen-form'));
-  document.getElementById('btn-refresh').addEventListener('click', () => showToast('最新データを表示中'));
+  document.getElementById('btn-view-only').addEventListener('click', () => { renderMatching(); showScreen('screen-list'); });
+  document.getElementById('btn-go-form').addEventListener('click', () => { renderMatching(); showScreen('screen-list'); setTimeout(() => showScreen('screen-form'), 0); });
+  document.getElementById('btn-refresh').addEventListener('click', () => { renderMatching(); showToast('最新データを表示中'); });
 
   // 編集画面
   document.getElementById('btn-edit-open').addEventListener('click', () => {
