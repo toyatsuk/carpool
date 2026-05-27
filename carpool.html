@@ -182,8 +182,10 @@
     entries = [];
     snapshot.forEach(child => {
       const v = child.val();
-      entries.push({ ...v, origin: (v.origin||'').trim(), firebaseKey: child.key });
+      entries.push({ ...v, origin: (v.origin||'').trim(), firebaseKey: child.key, originalKey: v.originalKey || child.key });
     });
+    // originalKey（登録時のキー）順にソート
+    entries.sort((a, b) => a.originalKey < b.originalKey ? -1 : 1);
     renderMatching();
     const sub = document.getElementById('list-sub');
     if (sub) {
@@ -343,7 +345,8 @@
     const err = !name ? 'お名前を入力してください' : !roleVal ? '役割を選択してください' : !originVal ? 'ピック場所を選択してください' : (originVal==='その他'&&!other) ? 'ピック場所の詳細を入力してください' : !count ? '人数を選択してください' : '';
     if (err) { errEl.textContent = err; errEl.style.display = 'block'; return; }
     const origin = originVal === 'その他' ? other : originVal;
-    await push(entriesRef, { name, role: roleVal, origin, count, note, ts: nowTs() });
+    const newRef = await push(entriesRef, { name, role: roleVal, origin, count, note, ts: nowTs() });
+    await set(newRef, { name, role: roleVal, origin, count, note, ts: nowTs(), originalKey: newRef.key });
     showToast('登録しました！');
     resetForm();
     renderMatching();
@@ -429,7 +432,8 @@
     }
     await set(ref(db, 'entries/' + editKey), {
       name: entry.name, role: entry.role, origin: entry.origin,
-      count: count, note: note, ts: nowTs()
+      count: count, note: note, ts: nowTs(),
+      originalKey: entry.originalKey || editKey
     });
     showToast('更新しました！');
     renderMatching();
