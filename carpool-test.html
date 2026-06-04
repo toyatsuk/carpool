@@ -171,7 +171,7 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getDatabase, ref, push, set, remove, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { getDatabase, ref, push, set, get, remove, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyDEJscf8STjYHOIcsFn6Fmxut098SiUf3U",
@@ -186,26 +186,24 @@
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
   const entriesRef = ref(db, 'entries');
+  const matchesRef = ref(db, 'matches-test');
 
   let entries = [];
+  let matches = []; // [{ matchKey, driverID, riders:[{riderID, seats}], seats(空き) }]
   let roleVal = '', originVal = '';
   let editKey = '', editCurrentCount = 0;
+  let syncing = false;
 
-  // リアルタイム同期
+  // entries リアルタイム同期
   onValue(entriesRef, async (snapshot) => {
     entries = [];
     snapshot.forEach(child => {
       const v = child.val();
       entries.push({ ...v, origin: (v.origin||'').trim(), firebaseKey: child.key });
     });
-    // ts順（登録時刻順）にソート
-    entries.sort((a, b) => {
-      const ta = a.ts || '';
-      const tb = b.ts || '';
-      return ta < tb ? -1 : ta > tb ? 1 : 0;
-    });
-    // IDがない人にだけ新しいIDを付与（既存IDは変更しない）
-    // 既存の最大IDを取得
+    // ts順ソート
+    entries.sort((a, b) => (a.ts||'') < (b.ts||'') ? -1 : (a.ts||'') > (b.ts||'') ? 1 : 0);
+    // IDがない人に固定IDを付与
     const existingIds = entries.filter(e => e.id).map(e => parseInt(e.id));
     let nextId = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
     for (const e of entries) {
@@ -217,6 +215,17 @@
     }
     updateSubTitle();
     renderMatching();
+  });
+
+  // matches リアルタイム同期
+  onValue(matchesRef, async (snapshot) => {
+    matches = [];
+    snapshot.forEach(child => {
+      matches.push({ ...child.val(), matchKey: child.key });
+    });
+    renderMatching();
+    // 削除された乗客のriderIDをmatchesから除去＋空き席更新
+    if (!syncing) await syncMatchesWithEntries();
   });
 
   function updateSubTitle() {
@@ -236,41 +245,115 @@
     return new Date().toLocaleString('ja-JP', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
   }
 
-  function runMatching(all) {
-    const drivers = all.filter(e => e.role === 'driver');
-    const riders  = all.filter(e => e.role === 'rider');
-    // 成東駅優先、同じ場所内はts順
-    const sortedDrivers = [
-      ...drivers.filter(d => d.origin.includes('成東駅')),
-      ...drivers.filter(d => !d.origin.includes('成東駅'))
-    ];
-    const matchedIds = new Set();
-    const result = [];
-    for (const driver of sortedDrivers) {
-      const seats = parseCount(driver.count);
-      const assigned = [];
-      const pool = riders.filter(r =>
-        r.origin.trim() === driver.origin.trim() && !matchedIds.has(r.firebaseKey)
-      );
-      for (const rider of pool) {
-        if (assigned.length >= seats) break;
-        const riderSeats = parseCount(rider.count);
-        if (assigned.length + riderSeats <= seats) {
-          for (let i = 0; i < riderSeats; i++) assigned.push(rider);
-          matchedIds.add(rider.firebaseKey);
+  function getEntryById(id) {
+    return entries.find(e => e.id === id);
+  }
+
+  // matchesとentriesの整合性を保つ
+  // 削除された乗客・ドライバーをmatchesから除去
+  // ドライバーの席数変更に伴う空き席更新
+  // 未マッチ乗客の自動マッチング
+  async function syncMatchesWithEntries() {
+    if (syncing) return;
+    syncing = true;
+    try {
+      const entryIds = new Set(entries.map(e => e.id));
+      const drivers = entries.filter(e => e.role === 'driver');
+
+      for (const match of matches) {
+        // ドライバーが削除された場合はmatchを丸ごと削除
+        if (!entryIds.has(match.driverID)) {
+          await remove(ref(db, 'matches-test/' + match.matchKey));
+          continue;
+        }
+        // 乗客が削除された場合はriderIDを除去
+        const driver = getEntryById(match.driverID);
+        const totalSeats = parseCount(driver.count);
+        let riders = (match.riders || []).filter(r => entryIds.has(r.riderID));
+        const usedSeats = riders.reduce((s, r) => s + (r.seats||1), 0);
+        const availableSeats = totalSeats - usedSeats;
+        // 空き席数・ridersを更新
+        await set(ref(db, 'matches-test/' + match.matchKey), {
+          driverID: match.driverID,
+          riders: riders,
+          seats: availableSeats
+        });
+      }
+
+      // 最新matchesを再取得
+      const matchSnap = await get(matchesRef);
+      const currentMatches = [];
+      matchSnap.forEach(child => currentMatches.push({ ...child.val(), matchKey: child.key }));
+
+      // 既にマッチング済みの乗客IDを収集
+      const matchedRiderIds = new Set();
+      for (const m of currentMatches) {
+        (m.riders||[]).forEach(r => matchedRiderIds.add(r.riderID));
+      }
+
+      // matchesにないドライバーは空き席のみ（matchは作らない、表示側で対応）
+
+      // 未マッチ乗客を自動マッチング（ts順・ピック場所一致・席数が合う）
+      const unmatchedRiders = entries.filter(e => e.role === 'rider' && !matchedRiderIds.has(e.id));
+
+      // 成東駅ドライバー優先・ts順
+      const sortedDrivers = [
+        ...drivers.filter(d => d.origin.includes('成東駅')),
+        ...drivers.filter(d => !d.origin.includes('成東駅'))
+      ];
+
+      for (const driver of sortedDrivers) {
+        // このドライバーのmatchを取得
+        let driverMatch = currentMatches.find(m => m.driverID === driver.id);
+        const totalSeats = parseCount(driver.count);
+        let usedSeats = driverMatch ? (driverMatch.riders||[]).reduce((s,r) => s+(r.seats||1), 0) : 0;
+        let available = totalSeats - usedSeats;
+        if (available <= 0) continue;
+
+        const pool = unmatchedRiders.filter(r =>
+          r.origin.trim() === driver.origin.trim() && !matchedRiderIds.has(r.id)
+        );
+
+        for (const rider of pool) {
+          if (available <= 0) break;
+          const riderSeats = parseCount(rider.count);
+          if (riderSeats <= available) {
+            if (driverMatch) {
+              // 既存matchにriderを追加
+              const newRiders = [...(driverMatch.riders||[]), { riderID: rider.id, seats: riderSeats }];
+              const newAvailable = available - riderSeats;
+              await set(ref(db, 'matches-test/' + driverMatch.matchKey), {
+                driverID: driver.id,
+                riders: newRiders,
+                seats: newAvailable
+              });
+              driverMatch.riders = newRiders;
+              available = newAvailable;
+            } else {
+              // 新規matchを作成
+              const newMatchRef = await push(matchesRef, {
+                driverID: driver.id,
+                riders: [{ riderID: rider.id, seats: riderSeats }],
+                seats: available - riderSeats
+              });
+              driverMatch = { matchKey: newMatchRef.key, driverID: driver.id, riders: [{ riderID: rider.id, seats: riderSeats }], seats: available - riderSeats };
+              available -= riderSeats;
+            }
+            matchedRiderIds.add(rider.id);
+            usedSeats += riderSeats;
+          }
         }
       }
-      result.push({ driver, seats, assigned });
+    } finally {
+      syncing = false;
     }
-    const unmatched = riders.filter(r => !matchedIds.has(r.firebaseKey));
-    return { matched: result, unmatched };
   }
 
   function buildCommentSection(people) {
     const seen = new Set();
     const unique = [];
     [...people].reverse().forEach(p => {
-      if (p.note && !seen.has(p.firebaseKey)) { seen.add(p.firebaseKey); unique.push(p); }
+      if (p && p.note && !seen.has(p.firebaseKey)) { seen.add(p.firebaseKey); unique.push(p); }
     });
     if (!unique.length) return '';
     const rows = unique.map(p =>
@@ -283,51 +366,70 @@
     const el = document.getElementById('match-result');
     if (!el) return;
     if (!entries.length) { el.innerHTML = '<div class="empty-msg">まだ登録がありません</div>'; return; }
-    const { matched, unmatched } = runMatching(entries);
+
+    const drivers = entries.filter(e => e.role === 'driver');
+    const sortedDrivers = [
+      ...drivers.filter(d => d.origin.includes('成東駅')),
+      ...drivers.filter(d => !d.origin.includes('成東駅'))
+    ];
+
+    // matchesで使われているriderIDを収集
+    const matchedRiderIds = new Set();
+    matches.forEach(m => (m.riders||[]).forEach(r => matchedRiderIds.add(r.riderID)));
+
     let html = '';
-    if (!matched.length) {
+    if (!sortedDrivers.length) {
       html = '<div class="empty-msg">ドライバーの登録待ちです</div>';
-    }
-    if (matched.length) {
-      html = matched.map(({ driver, seats, assigned }) => {
-        const isFull = assigned.length >= seats;
-        const remaining = seats - assigned.length;
-        const riderCounts = [];
-        assigned.forEach(r => {
-          const found = riderCounts.find(x => x.firebaseKey === r.firebaseKey);
-          if (found) found.cnt++;
-          else riderCounts.push({ ...r, cnt: 1 });
-        });
-        const riderRows = riderCounts.map(r => {
-          const total = parseCount(r.count);
-          const label = total > 1 ? ' <span style="font-size:12px;color:#888">×' + total + '</span>' : '';
-          return '<div class="rider-row"><span style="font-size:16px">💺</span><span class="rider-name">' + r.name + label + '</span><span class="rider-origin">' + r.origin + '</span></div>';
+    } else {
+      html = sortedDrivers.map(driver => {
+        const totalSeats = parseCount(driver.count);
+        const driverMatch = matches.find(m => m.driverID === driver.id);
+        const assignedRiders = driverMatch ? (driverMatch.riders||[]) : [];
+        const usedSeats = assignedRiders.reduce((s, r) => s + (r.seats||1), 0);
+        const remaining = totalSeats - usedSeats;
+        const isFull = remaining <= 0;
+
+        const riderRows = assignedRiders.map(r => {
+          const rider = getEntryById(r.riderID);
+          if (!rider) return '';
+          const seats = r.seats || 1;
+          const label = seats > 1 ? ' <span style="font-size:12px;color:#888">×' + seats + '</span>' : '';
+          return '<div class="rider-row"><span style="font-size:16px">💺</span><span class="rider-name">' + rider.name + label + '</span><span class="rider-origin">' + rider.origin + '</span></div>';
         }).join('');
+
         const emptyRows = !isFull ? Array.from({length: remaining}).map(() =>
           '<div class="empty-seat"><span style="font-size:16px;opacity:0.25">💺</span><span class="empty-label">空き</span></div>'
         ).join('') : '';
+
         const badge = isFull
           ? '<span class="seats-badge full-badge">満席</span>'
           : '<span class="seats-badge open">あと ' + remaining + '席</span>';
-        const commentSection = buildCommentSection([driver, ...assigned]);
+
+        const allPeople = [driver, ...assignedRiders.map(r => getEntryById(r.riderID)).filter(Boolean)];
+        const commentSection = buildCommentSection(allPeople);
+
         return '<div class="match-card' + (isFull ? ' full' : '') + '">'
           + '<div class="pickup-tag">📍 ' + driver.origin + '</div>'
-          + '<div class="driver-row"><span style="font-size:18px">🚗</span></span><span class="driver-name">' + driver.name + '</span>' + badge + '</div>'
+          + '<div class="driver-row"><span style="font-size:18px">🚗</span><span class="driver-name">' + driver.name + '</span>' + badge + '</div>'
           + '<hr class="divider">'
           + riderRows + emptyRows
           + commentSection
           + '</div>';
       }).join('');
     }
-    if (unmatched.length) {
-      const rows = unmatched.map(r => {
+
+    // マッチング待ち
+    const unmatchedRiders = entries.filter(e => e.role === 'rider' && !matchedRiderIds.has(e.id));
+    if (unmatchedRiders.length) {
+      const rows = unmatchedRiders.map(r => {
         const total = parseCount(r.count);
         const label = total > 1 ? ' <span style="font-size:12px;color:#888">×' + total + '</span>' : '';
         return '<div class="rider-row" style="padding:5px 0"><span style="font-size:16px">💺</span><span class="rider-name">' + r.name + label + '</span><span class="rider-origin">' + r.origin + '</span></div>';
       }).join('');
-      const commentSection = buildCommentSection(unmatched);
-      html += '<div class="unmatched-box"><div class="unmatched-title">⏳ マッチング待ち（' + unmatched.length + '人）</div>' + rows + commentSection + '</div>';
+      const commentSection = buildCommentSection(unmatchedRiders);
+      html += '<div class="unmatched-box"><div class="unmatched-title">⏳ マッチング待ち（' + unmatchedRiders.length + '人）</div>' + rows + commentSection + '</div>';
     }
+
     el.innerHTML = html;
   }
 
@@ -353,7 +455,6 @@
     document.getElementById('count-label').textContent = '乗せられる人数';
   }
 
-  // 登録フォーム
   document.getElementById('btn-driver').addEventListener('click', () => { roleVal='driver'; document.getElementById('btn-driver').className='toggle-btn sel-green'; document.getElementById('btn-rider').className='toggle-btn'; document.getElementById('count-label').textContent='乗せられる人数'; });
   document.getElementById('btn-rider').addEventListener('click', () => { roleVal='rider'; document.getElementById('btn-driver').className='toggle-btn'; document.getElementById('btn-rider').className='toggle-btn sel-blue'; document.getElementById('count-label').textContent='乗りたい人数'; });
   document.getElementById('btn-naruto').addEventListener('click', () => { originVal='成東駅'; document.getElementById('btn-naruto').className='toggle-btn sel-amber'; document.getElementById('btn-other').className='toggle-btn'; document.getElementById('other-wrap').style.display='none'; });
@@ -369,9 +470,7 @@
     const err = !name ? 'お名前を入力してください' : !roleVal ? '役割を選択してください' : !originVal ? 'ピック場所を選択してください' : (originVal==='その他'&&!other) ? 'ピック場所の詳細を入力してください' : !count ? '人数を選択してください' : '';
     if (err) { errEl.textContent = err; errEl.style.display = 'block'; return; }
     const origin = originVal === 'その他' ? other : originVal;
-    // ts順のID付与のため全件取得してIDを計算
-    const newId = String(entries.length + 1).padStart(2, '0');
-    await push(entriesRef, { name, role: roleVal, origin, count, note, ts: nowTs(), id: newId });
+    await push(entriesRef, { name, role: roleVal, origin, count, note, ts: nowTs() });
     showToast('登録しました！');
     resetForm();
     showScreen('screen-list');
@@ -381,7 +480,6 @@
   document.getElementById('btn-go-form').addEventListener('click', () => showScreen('screen-form'));
   document.getElementById('btn-refresh').addEventListener('click', () => { renderMatching(); showToast('最新データを表示中'); });
 
-  // 編集画面
   document.getElementById('btn-edit-open').addEventListener('click', () => {
     document.getElementById('e-search').value = '';
     document.getElementById('search-result').style.display = 'none';
@@ -404,13 +502,13 @@
       return;
     }
     resultEl.className = 'search-result found';
-    resultEl.textContent = '「' + found.name + '」さんの登録が見つかりました';
+    resultEl.textContent = '「' + found.name + '」さんの登録が見つかりました（ID：' + found.id + '）';
     resultEl.style.display = 'block';
     editKey = found.firebaseKey;
     editCurrentCount = parseCount(found.count);
     const roleLabel = found.role === 'driver' ? '🚗 車を出せる' : '💺 相乗りしたい';
     document.getElementById('edit-summary').innerHTML =
-      '<strong>' + found.name + '</strong><br>' + roleLabel + '　📍 ' + found.origin + '　👥 ' + (found.count || '');
+      'ID：<strong>' + found.id + '</strong>　' + roleLabel + '<br><strong>' + found.name + '</strong>　📍 ' + found.origin + '　👥 ' + (found.count || '');
     const countWrap = document.getElementById('e-count-wrap');
     if (found.role === 'driver') {
       countWrap.style.display = 'block';
@@ -418,8 +516,7 @@
       const sel = document.getElementById('e-count');
       sel.value = found.count || '';
       Array.from(sel.options).forEach(opt => {
-        const v = parseCount(opt.value);
-        opt.disabled = opt.value !== '' && v < editCurrentCount;
+        opt.disabled = opt.value !== '' && parseCount(opt.value) < editCurrentCount;
       });
     } else {
       countWrap.style.display = 'none';
@@ -442,7 +539,7 @@
     }
     await set(ref(db, 'entries/' + editKey), {
       name: entry.name, role: entry.role, origin: entry.origin,
-      count: count, note: note, ts: entry.ts
+      count: count, note: note, ts: entry.ts, id: entry.id
     });
     showToast('更新しました！');
     showScreen('screen-list');
