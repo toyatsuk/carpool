@@ -185,7 +185,7 @@
 
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
-  const entriesRef = ref(db, 'entries-test');
+  const entriesRef = ref(db, 'entries');
   const matchesRef = ref(db, 'matches-test');
 
   let entries = [];   // 登録データ
