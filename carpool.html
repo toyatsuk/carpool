@@ -48,7 +48,7 @@
   .comment-name { font-weight: 600; color: #444; }
   .comment-ts { font-size: 11px; color: #bbb; margin-left: 4px; }
   .unmatched-box { background: #fff; border-radius: 14px; padding: 1rem 1.25rem; margin-top: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
-  .unmatched-title { font-size: 13px; color: #888; margin-bottom: 10px; display: flex; align-items: center; gap: 5px; }
+  .unmatched-title { font-size: 13px; color: #888; margin-bottom: 10px; }
   .empty-msg { text-align: center; padding: 3rem 0; font-size: 14px; color: #aaa; }
   .loading { text-align: center; padding: 2rem; color: #aaa; font-size: 14px; }
   .bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #eee; padding: 0.75rem 1rem; display: flex; gap: 8px; max-width: 480px; margin: 0 auto; }
@@ -59,7 +59,6 @@
   .search-result.found { background: #f0f7ff; border: 1px solid #b3d4f5; color: #1565c0; }
   .search-result.notfound { background: #fff0f0; border: 1px solid #f5c6c6; color: #c62828; }
   .edit-summary { font-size: 13px; color: #444; background: #f5f5f5; border-radius: 8px; padding: 10px 12px; margin-bottom: 4px; line-height: 1.8; }
-  .disabled-select { opacity: 0.5; pointer-events: none; }
   .delete-btn { width: 100%; padding: 12px; background: #fff; color: #c62828; border: 1.5px solid #f5c6c6; border-radius: 12px; font-size: 15px; cursor: pointer; margin-top: 8px; }
   .confirm-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 200; display: none; align-items: center; justify-content: center; }
   .confirm-overlay.active { display: flex; }
@@ -139,8 +138,6 @@
     </div>
     <div class="card" id="edit-form-card" style="display:none">
       <div class="edit-summary" id="edit-summary"></div>
-
-      <!-- ドライバーのみ：人数増加 -->
       <div id="e-count-wrap" style="display:none">
         <label id="e-count-label">乗せられる人数（増加のみ）</label>
         <select id="e-count">
@@ -148,7 +145,6 @@
           <option>1人</option><option>2人</option><option>3人</option><option>4人</option><option>5人</option>
         </select>
       </div>
-
       <label>メッセージ</label>
       <textarea id="e-note" placeholder="最新のメッセージのみが表示されます"></textarea>
       <div class="error-msg" id="e-error"></div>
@@ -161,6 +157,7 @@
   </div>
 
 </div>
+
 <div class="confirm-overlay" id="confirm-overlay">
   <div class="confirm-box">
     <p>この登録を削除しますか？</p>
@@ -174,7 +171,7 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getDatabase, ref, push, set, remove, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { getDatabase, ref, push, set, get, remove, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyDEJscf8STjYHOIcsFn6Fmxut098SiUf3U",
@@ -189,38 +186,17 @@
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
   const entriesRef = ref(db, 'entries');
+  const matchesRef = ref(db, 'matches260604a');
+  const MATCHES_PATH = 'matches260604a';
 
   let entries = [];
+  let matches = [];
   let roleVal = '', originVal = '';
   let editKey = '', editCurrentCount = 0;
-
-  onValue(entriesRef, (snapshot) => {
-    entries = [];
-    snapshot.forEach(child => {
-      const v = child.val();
-      entries.push({ ...v, origin: (v.origin||'').trim(), firebaseKey: child.key, originalKey: v.originalKey || child.key });
-    });
-    // originalKey（登録時のキー）順にソート
-    entries.sort((a, b) => a.originalKey < b.originalKey ? -1 : 1);
-    renderMatching();
-    const sub = document.getElementById('list-sub');
-    if (sub) {
-      const d = entries.filter(e => e.role === 'driver').length;
-      const r = entries.filter(e => e.role === 'rider').length;
-      sub.textContent = 'ドライバー ' + d + '人 / 相乗り希望 ' + r + '人';
-    }
-  });
-
-  function showToast(msg) {
-    const t = document.getElementById('toast');
-    t.textContent = msg; t.style.opacity = '1';
-    setTimeout(() => t.style.opacity = '0', 2000);
-  }
-
-  function showScreen(id) {
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
-  }
+  let runningInit = false;
+  let runningAdd = false;
+  let runningRemove = false;
+  let runningUpdate = false;
 
   function parseCount(str) {
     const m = str ? str.match(/\d+/) : null;
@@ -231,53 +207,283 @@
     return new Date().toLocaleString('ja-JP', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
   }
 
-  function runMatching(all) {
-    // 全員を登録順で処理：先着順にドライバーか乗客かを確定させる
-    const drivers = all.filter(e => e.role === 'driver');
-    const riders  = all.filter(e => e.role === 'rider');
+  function getEntryById(id) {
+    return entries.find(e => e.id === id);
+  }
 
-    // ドライバーは成東駅優先、同じ場所内は登録順
-    const sortedDrivers = [
-      ...drivers.filter(d => d.origin.includes('成東駅')),
-      ...drivers.filter(d => !d.origin.includes('成東駅'))
-    ];
+  function buildMatchData(driverEntry, riderList, availableSeats) {
+    const data = {
+      driverID: driverEntry.id,
+      driverName: driverEntry.name,
+      seats: availableSeats
+    };
+    riderList.forEach((r, i) => {
+      const n = String(i + 1).padStart(2, '0');
+      data['rider' + n + 'ID']    = r.id;
+      data['rider' + n + 'Name']  = r.name;
+      data['rider' + n + 'Seats'] = r.seats;
+    });
+    return data;
+  }
 
-    // 乗客は登録順（all配列はpushで登録順済み）
-    const matchedIds = new Set();
-    const result = [];
+  function extractRiders(match) {
+    const riders = [];
+    let i = 1;
+    while (true) {
+      const n = String(i).padStart(2, '0');
+      if (!match['rider' + n + 'ID']) break;
+      riders.push({
+        id:    match['rider' + n + 'ID'],
+        name:  match['rider' + n + 'Name'] || '',
+        seats: match['rider' + n + 'Seats'] || 1
+      });
+      i++;
+    }
+    return riders;
+  }
 
-    for (const driver of sortedDrivers) {
-      const seats = parseCount(driver.count);
-      const assigned = [];
-      // 同じピック場所の乗客を登録順で処理
-      const pool = riders.filter(r => r.origin.trim() === driver.origin.trim() && !matchedIds.has(r.firebaseKey));
-      for (const rider of pool) {
-        if (assigned.length >= seats) break;
-        const riderSeats = parseCount(rider.count);
-        // 全員分の席が確保できる場合のみマッチング
-        if (assigned.length + riderSeats <= seats) {
-          for (let i = 0; i < riderSeats; i++) assigned.push(rider);
-          matchedIds.add(rider.firebaseKey);
+  // ============================================================
+  // 初回起動時：matchesが空の場合のみ全マッチングを実行
+  // ============================================================
+  async function initMatching(allEntries) {
+    if (runningInit) return;
+    runningInit = true;
+    try {
+      const drivers = allEntries.filter(e => e.role === 'driver');
+      const riders  = allEntries.filter(e => e.role === 'rider');
+      const sortedDrivers = [
+        ...drivers.filter(d => d.origin.includes('成東駅')),
+        ...drivers.filter(d => !d.origin.includes('成東駅'))
+      ];
+      const matchedIds = new Set();
+
+      for (const driver of sortedDrivers) {
+        const totalSeats = parseCount(driver.count);
+        const assignedRiders = [];
+        let usedSeats = 0;
+        const pool = riders.filter(r =>
+          r.origin.trim() === driver.origin.trim() && !matchedIds.has(r.id)
+        );
+        for (const rider of pool) {
+          if (usedSeats >= totalSeats) break;
+          const riderSeats = parseCount(rider.count);
+          if (usedSeats + riderSeats <= totalSeats) {
+            assignedRiders.push({ id: rider.id, name: rider.name, seats: riderSeats });
+            matchedIds.add(rider.id);
+            usedSeats += riderSeats;
+          }
         }
-        // 席が足りなければスキップ→マッチング待ちへ
+        await push(matchesRef, buildMatchData(driver, assignedRiders, totalSeats - usedSeats));
       }
-      result.push({ driver, seats, assigned });
+    } finally {
+      runningInit = false;
+    }
+  }
+
+  // ============================================================
+  // 新規登録時：空き席のあるドライバーにのみ追加マッチング
+  // ============================================================
+  async function addMatchForNewEntry(newEntry) {
+    if (runningAdd) return;
+    runningAdd = true;
+    try {
+      if (newEntry.role === 'driver') {
+        // 新ドライバー：未マッチの乗客を割り当て
+        const matchSnap = await get(matchesRef);
+        const currentMatches = [];
+        matchSnap.forEach(child => currentMatches.push({ ...child.val(), matchKey: child.key }));
+        const matchedRiderIds = new Set();
+        currentMatches.forEach(m => extractRiders(m).forEach(r => matchedRiderIds.add(r.id)));
+
+        const totalSeats = parseCount(newEntry.count);
+        const assignedRiders = [];
+        let usedSeats = 0;
+        const pool = entries.filter(e =>
+          e.role === 'rider' &&
+          e.origin.trim() === newEntry.origin.trim() &&
+          !matchedRiderIds.has(e.id)
+        );
+        for (const rider of pool) {
+          if (usedSeats >= totalSeats) break;
+          const riderSeats = parseCount(rider.count);
+          if (usedSeats + riderSeats <= totalSeats) {
+            assignedRiders.push({ id: rider.id, name: rider.name, seats: riderSeats });
+            usedSeats += riderSeats;
+          }
+        }
+        await push(matchesRef, buildMatchData(newEntry, assignedRiders, totalSeats - usedSeats));
+
+      } else {
+        // 新乗客：空き席のあるドライバーを探してマッチング
+        const matchSnap = await get(matchesRef);
+        const currentMatches = [];
+        matchSnap.forEach(child => currentMatches.push({ ...child.val(), matchKey: child.key }));
+
+        // 既にマッチング済みかチェック
+        for (const m of currentMatches) {
+          if (extractRiders(m).some(r => r.id === newEntry.id)) return; // 既にマッチング済み
+        }
+
+        const riderSeats = parseCount(newEntry.count);
+        // 成東駅優先・ts順で空き席のあるドライバーを探す
+        const drivers = entries.filter(e => e.role === 'driver');
+        const sortedDrivers = [
+          ...drivers.filter(d => d.origin.includes('成東駅')),
+          ...drivers.filter(d => !d.origin.includes('成東駅'))
+        ];
+
+        for (const driver of sortedDrivers) {
+          if (driver.origin.trim() !== newEntry.origin.trim()) continue;
+          const driverMatch = currentMatches.find(m => m.driverID === driver.id);
+          if (!driverMatch) continue; // matchesにないドライバーはスキップ
+          if (driverMatch.seats >= riderSeats) {
+            // 空き席に追加
+            const currentRiders = extractRiders(driverMatch);
+            currentRiders.push({ id: newEntry.id, name: newEntry.name, seats: riderSeats });
+            const newSeats = driverMatch.seats - riderSeats;
+            await set(ref(db, MATCHES_PATH + '/' + driverMatch.matchKey),
+              buildMatchData(driver, currentRiders, newSeats));
+            break;
+          }
+        }
+      }
+    } finally {
+      runningAdd = false;
+    }
+  }
+
+  // ============================================================
+  // 削除時：その人のmatchを除去して空き席を増やす
+  // ============================================================
+  async function removeFromMatching(deletedEntry) {
+    if (runningRemove) return;
+    runningRemove = true;
+    try {
+      const matchSnap = await get(matchesRef);
+      const currentMatches = [];
+      matchSnap.forEach(child => currentMatches.push({ ...child.val(), matchKey: child.key }));
+
+      if (deletedEntry.role === 'driver') {
+        // ドライバー削除：そのmatchを丸ごと削除
+        const driverMatch = currentMatches.find(m => m.driverID === deletedEntry.id);
+        if (driverMatch) {
+          await remove(ref(db, MATCHES_PATH + '/' + driverMatch.matchKey));
+        }
+      } else {
+        // 乗客削除：matchからriderを除去して空き席を増やす
+        for (const match of currentMatches) {
+          const riders = extractRiders(match);
+          const idx = riders.findIndex(r => r.id === deletedEntry.id);
+          if (idx !== -1) {
+            const removedSeats = riders[idx].seats;
+            riders.splice(idx, 1);
+            const driver = entries.find(e => e.id === match.driverID);
+            if (!driver) continue;
+            const newSeats = match.seats + removedSeats;
+            await set(ref(db, MATCHES_PATH + '/' + match.matchKey),
+              buildMatchData(driver, riders, newSeats));
+            break;
+          }
+        }
+      }
+    } finally {
+      runningRemove = false;
+    }
+  }
+
+  // ============================================================
+  // ドライバーの人数増加時：増えた分だけ空き席を更新
+  // ============================================================
+  async function updateDriverSeats(driverEntry, oldCount) {
+    if (runningUpdate) return;
+    runningUpdate = true;
+    try {
+      const matchSnap = await get(matchesRef);
+      const currentMatches = [];
+      matchSnap.forEach(child => currentMatches.push({ ...child.val(), matchKey: child.key }));
+      const driverMatch = currentMatches.find(m => m.driverID === driverEntry.id);
+      if (!driverMatch) return;
+      const addedSeats = parseCount(driverEntry.count) - oldCount;
+      if (addedSeats <= 0) return;
+      // matchKeyを除いたデータを作成してseatsだけ増やす
+      const currentRiders = extractRiders(driverMatch);
+      const newSeats = driverMatch.seats + addedSeats;
+      await set(ref(db, MATCHES_PATH + '/' + driverMatch.matchKey),
+        buildMatchData(driverEntry, currentRiders, newSeats));
+    } finally {
+      runningUpdate = false;
+    }
+  }
+
+  // entries リアルタイム同期
+  onValue(entriesRef, (snapshot) => {
+    entries = [];
+    snapshot.forEach(child => {
+      const v = child.val();
+      entries.push({ ...v, origin: (v.origin||'').trim(), firebaseKey: child.key });
+    });
+    entries.sort((a, b) => (a.ts||'') < (b.ts||'') ? -1 : (a.ts||'') > (b.ts||'') ? 1 : 0);
+    updateSubTitle();
+    renderMatching();
+  });
+
+  // matches リアルタイム同期
+  onValue(matchesRef, (snapshot) => {
+    matches = [];
+    snapshot.forEach(child => {
+      matches.push({ ...child.val(), matchKey: child.key });
+    });
+    renderMatching();
+  });
+
+  // ページ起動時：matchesが空なら初回マッチング
+  async function initialize() {
+    const snap = await get(entriesRef);
+    const allEntries = [];
+    snap.forEach(child => {
+      const v = child.val();
+      allEntries.push({ ...v, origin: (v.origin||'').trim(), firebaseKey: child.key });
+    });
+    allEntries.sort((a, b) => (a.ts||'') < (b.ts||'') ? -1 : (a.ts||'') > (b.ts||'') ? 1 : 0);
+
+    // IDがない人に固定IDを付与
+    const existingIds = allEntries.filter(e => e.id).map(e => parseInt(e.id));
+    let nextId = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
+    for (const e of allEntries) {
+      if (!e.id) {
+        e.id = String(nextId).padStart(2, '0');
+        await set(ref(db, 'entries/' + e.firebaseKey + '/id'), e.id);
+        nextId++;
+      }
     }
 
-    const unmatched = riders.filter(r => !matchedIds.has(r.firebaseKey));
-    return { matched: result, unmatched };
+    // matchesが空の場合のみ初回マッチング実行
+    const matchSnap = await get(matchesRef);
+    let matchCount = 0;
+    matchSnap.forEach(() => matchCount++);
+    if (matchCount === 0) {
+      await initMatching(allEntries);
+    }
+  }
+  initialize();
+
+  function updateSubTitle() {
+    const sub = document.getElementById('list-sub');
+    if (!sub) return;
+    const d = entries.filter(e => e.role === 'driver').length;
+    const r = entries.filter(e => e.role === 'rider').length;
+    sub.textContent = 'ドライバー ' + d + '人 / 相乗り希望 ' + r + '人';
   }
 
   function buildCommentSection(people) {
-    // 重複除去（同一firebaseKeyは1件のみ）し、新しい順
     const seen = new Set();
     const unique = [];
     [...people].reverse().forEach(p => {
-      if (p.note && !seen.has(p.firebaseKey)) { seen.add(p.firebaseKey); unique.push(p); }
+      if (p && p.note && !seen.has(p.firebaseKey)) { seen.add(p.firebaseKey); unique.push(p); }
     });
     if (!unique.length) return '';
     const rows = unique.map(p =>
-      '<div class="comment-row"><span class="comment-name">' + p.name + '</span>：' + p.note + '<span class="comment-ts">（' + (p.ts || '') + '）</span></div>'
+      '<div class="comment-row"><span class="comment-name">' + p.name + '</span>：' + p.note + '<span class="comment-ts">（' + (p.ts||'') + '）</span></div>'
     ).join('');
     return '<div class="comment-section">' + rows + '</div>';
   }
@@ -286,33 +492,45 @@
     const el = document.getElementById('match-result');
     if (!el) return;
     if (!entries.length) { el.innerHTML = '<div class="empty-msg">まだ登録がありません</div>'; return; }
-    const { matched, unmatched } = runMatching(entries);
+
+    const drivers = entries.filter(e => e.role === 'driver');
+    const sortedDrivers = [
+      ...drivers.filter(d => d.origin.includes('成東駅')),
+      ...drivers.filter(d => !d.origin.includes('成東駅'))
+    ];
+    const matchedRiderIds = new Set();
+    matches.forEach(m => extractRiders(m).forEach(r => matchedRiderIds.add(r.id)));
+
     let html = '';
-    if (!matched.length) {
+    if (!sortedDrivers.length) {
       html = '<div class="empty-msg">ドライバーの登録待ちです</div>';
-    }
-    if (matched.length) {
-      html = matched.map(({ driver, seats, assigned }) => {
-        const isFull = assigned.length >= seats;
-        const remaining = seats - assigned.length;
-        const riderCounts = [];
-        assigned.forEach(r => {
-          const found = riderCounts.find(x => x.firebaseKey === r.firebaseKey);
-          if (found) found.cnt++;
-          else riderCounts.push({ ...r, cnt: 1 });
-        });
-        const riderRows = riderCounts.map(r => {
-          const total = parseCount(r.count);
-          const label = total > 1 ? ' <span style="font-size:12px;color:#888">×' + total + '</span>' : '';
-          return '<div class="rider-row"><span style="font-size:16px">💺</span><span class="rider-name">' + r.name + label + '</span><span class="rider-origin">' + r.origin + '</span></div>';
+    } else {
+      html = sortedDrivers.map(driver => {
+        const totalSeats = parseCount(driver.count);
+        const driverMatch = matches.find(m => m.driverID === driver.id);
+        const assignedRiders = driverMatch ? extractRiders(driverMatch) : [];
+        const usedSeats = assignedRiders.reduce((s, r) => s + r.seats, 0);
+        const remaining = driverMatch ? driverMatch.seats : totalSeats;
+        const isFull = remaining <= 0;
+
+        const riderRows = assignedRiders.map(r => {
+          const entry = getEntryById(r.id);
+          if (!entry) return '';
+          const label = r.seats > 1 ? ' <span style="font-size:12px;color:#888">×' + r.seats + '</span>' : '';
+          return '<div class="rider-row"><span style="font-size:16px">💺</span><span class="rider-name">' + entry.name + label + '</span><span class="rider-origin">' + entry.origin + '</span></div>';
         }).join('');
+
         const emptyRows = !isFull ? Array.from({length: remaining}).map(() =>
           '<div class="empty-seat"><span style="font-size:16px;opacity:0.25">💺</span><span class="empty-label">空き</span></div>'
         ).join('') : '';
+
         const badge = isFull
           ? '<span class="seats-badge full-badge">満席</span>'
           : '<span class="seats-badge open">あと ' + remaining + '席</span>';
-        const commentSection = buildCommentSection([driver, ...assigned]);
+
+        const allPeople = [driver, ...assignedRiders.map(r => getEntryById(r.id)).filter(Boolean)];
+        const commentSection = buildCommentSection(allPeople);
+
         return '<div class="match-card' + (isFull ? ' full' : '') + '">'
           + '<div class="pickup-tag">📍 ' + driver.origin + '</div>'
           + '<div class="driver-row"><span style="font-size:18px">🚗</span><span class="driver-name">' + driver.name + '</span>' + badge + '</div>'
@@ -322,16 +540,29 @@
           + '</div>';
       }).join('');
     }
-    if (unmatched.length) {
-      const rows = unmatched.map(r => {
+
+    const unmatchedRiders = entries.filter(e => e.role === 'rider' && !matchedRiderIds.has(e.id));
+    if (unmatchedRiders.length) {
+      const rows = unmatchedRiders.map(r => {
         const total = parseCount(r.count);
         const label = total > 1 ? ' <span style="font-size:12px;color:#888">×' + total + '</span>' : '';
         return '<div class="rider-row" style="padding:5px 0"><span style="font-size:16px">💺</span><span class="rider-name">' + r.name + label + '</span><span class="rider-origin">' + r.origin + '</span></div>';
       }).join('');
-      const commentSection = buildCommentSection(unmatched);
-      html += '<div class="unmatched-box"><div class="unmatched-title">⏳ マッチング待ち（' + unmatched.length + '人）</div>' + rows + commentSection + '</div>';
+      const commentSection = buildCommentSection(unmatchedRiders);
+      html += '<div class="unmatched-box"><div class="unmatched-title">⏳ マッチング待ち（' + unmatchedRiders.length + '人）</div>' + rows + commentSection + '</div>';
     }
     el.innerHTML = html;
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.style.opacity = '1';
+    setTimeout(() => t.style.opacity = '0', 2000);
+  }
+
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
   }
 
   function resetForm() {
@@ -345,7 +576,6 @@
     document.getElementById('count-label').textContent = '乗せられる人数';
   }
 
-  // 登録フォーム
   document.getElementById('btn-driver').addEventListener('click', () => { roleVal='driver'; document.getElementById('btn-driver').className='toggle-btn sel-green'; document.getElementById('btn-rider').className='toggle-btn'; document.getElementById('count-label').textContent='乗せられる人数'; });
   document.getElementById('btn-rider').addEventListener('click', () => { roleVal='rider'; document.getElementById('btn-driver').className='toggle-btn'; document.getElementById('btn-rider').className='toggle-btn sel-blue'; document.getElementById('count-label').textContent='乗りたい人数'; });
   document.getElementById('btn-naruto').addEventListener('click', () => { originVal='成東駅'; document.getElementById('btn-naruto').className='toggle-btn sel-amber'; document.getElementById('btn-other').className='toggle-btn'; document.getElementById('other-wrap').style.display='none'; });
@@ -362,25 +592,27 @@
     if (err) { errEl.textContent = err; errEl.style.display = 'block'; return; }
     const origin = originVal === 'その他' ? other : originVal;
     const newRef = await push(entriesRef, { name, role: roleVal, origin, count, note, ts: nowTs() });
-    await set(newRef, { name, role: roleVal, origin, count, note, ts: nowTs(), originalKey: newRef.key });
+    // IDを付与
+    const newId = String(entries.length + 1).padStart(2, '0');
+    await set(newRef, { name, role: roleVal, origin, count, note, ts: nowTs(), id: newId });
+    // 新規エントリーにマッチング追加
+    await addMatchForNewEntry({ id: newId, name, role: roleVal, origin, count, note });
     showToast('登録しました！');
     resetForm();
-    renderMatching();
     showScreen('screen-list');
   });
 
-  document.getElementById('btn-view-only').addEventListener('click', () => { renderMatching(); showScreen('screen-list'); });
+  document.getElementById('btn-view-only').addEventListener('click', () => showScreen('screen-list'));
   document.getElementById('btn-go-form').addEventListener('click', () => showScreen('screen-form'));
   document.getElementById('btn-refresh').addEventListener('click', () => { renderMatching(); showToast('最新データを表示中'); });
 
-  // 編集画面
   document.getElementById('btn-edit-open').addEventListener('click', () => {
     document.getElementById('e-search').value = '';
     document.getElementById('search-result').style.display = 'none';
     document.getElementById('edit-form-card').style.display = 'none';
     showScreen('screen-edit');
   });
-  document.getElementById('btn-edit-back').addEventListener('click', () => { renderMatching(); showScreen('screen-list'); });
+  document.getElementById('btn-edit-back').addEventListener('click', () => showScreen('screen-list'));
 
   document.getElementById('btn-search').addEventListener('click', () => {
     const name = document.getElementById('e-search').value.trim();
@@ -396,32 +628,25 @@
       return;
     }
     resultEl.className = 'search-result found';
-    resultEl.textContent = '「' + found.name + '」さんの登録が見つかりました';
+    resultEl.textContent = '「' + found.name + '」さんの登録が見つかりました（ID：' + found.id + '）';
     resultEl.style.display = 'block';
     editKey = found.firebaseKey;
     editCurrentCount = parseCount(found.count);
-
-    // サマリー表示
     const roleLabel = found.role === 'driver' ? '🚗 車を出せる' : '💺 相乗りしたい';
     document.getElementById('edit-summary').innerHTML =
-      '<strong>' + found.name + '</strong><br>' + roleLabel + '　📍 ' + found.origin + '　👥 ' + (found.count || '');
-
-    // ドライバーのみ人数変更可（増加のみ）
+      'ID：<strong>' + found.id + '</strong>　' + roleLabel + '<br><strong>' + found.name + '</strong>　📍 ' + found.origin + '　👥 ' + (found.count||'');
     const countWrap = document.getElementById('e-count-wrap');
     if (found.role === 'driver') {
       countWrap.style.display = 'block';
       document.getElementById('e-count-label').textContent = '乗せられる人数（現在：' + found.count + '、増加のみ可）';
-      // 現在の人数以下の選択肢をdisabledに
       const sel = document.getElementById('e-count');
       sel.value = found.count || '';
       Array.from(sel.options).forEach(opt => {
-        const v = parseCount(opt.value);
-        opt.disabled = opt.value !== '' && v < editCurrentCount;
+        opt.disabled = opt.value !== '' && parseCount(opt.value) < editCurrentCount;
       });
     } else {
       countWrap.style.display = 'none';
     }
-
     document.getElementById('e-note').value = found.note || '';
     document.getElementById('e-error').style.display = 'none';
     formCard.style.display = 'block';
@@ -434,44 +659,35 @@
     let count = entry.count;
     if (entry.role === 'driver') {
       const newCount = document.getElementById('e-count').value;
-      if (!newCount) {
-        document.getElementById('e-error').textContent = '人数を選択してください';
-        document.getElementById('e-error').style.display = 'block';
-        return;
-      }
-      if (parseCount(newCount) < editCurrentCount) {
-        document.getElementById('e-error').textContent = '人数を減らすことはできません';
-        document.getElementById('e-error').style.display = 'block';
-        return;
-      }
+      if (!newCount) { document.getElementById('e-error').textContent = '人数を選択してください'; document.getElementById('e-error').style.display = 'block'; return; }
+      if (parseCount(newCount) < editCurrentCount) { document.getElementById('e-error').textContent = '人数を減らすことはできません'; document.getElementById('e-error').style.display = 'block'; return; }
       count = newCount;
     }
     await set(ref(db, 'entries/' + editKey), {
       name: entry.name, role: entry.role, origin: entry.origin,
-      count: count, note: note, ts: nowTs(),
-      originalKey: entry.originalKey || editKey
+      count: count, note: note, ts: entry.ts, id: entry.id
     });
+    // ドライバーの人数増加時は空き席を更新
+    if (entry.role === 'driver' && parseCount(count) > editCurrentCount) {
+      await updateDriverSeats({ id: entry.id, name: entry.name, count: count }, editCurrentCount);
+    }
     showToast('更新しました！');
-    renderMatching();
     showScreen('screen-list');
   });
 
-  // 削除ボタン → 確認ダイアログを表示
   document.getElementById('btn-delete').addEventListener('click', () => {
     document.getElementById('confirm-overlay').classList.add('active');
   });
-
-  // キャンセル
   document.getElementById('confirm-cancel').addEventListener('click', () => {
     document.getElementById('confirm-overlay').classList.remove('active');
   });
-
-  // 削除確定
   document.getElementById('confirm-ok').addEventListener('click', async () => {
     document.getElementById('confirm-overlay').classList.remove('active');
+    const entry = entries.find(e => e.firebaseKey === editKey);
+    if (!entry) return;
+    await removeFromMatching(entry);
     await remove(ref(db, 'entries/' + editKey));
     showToast('削除しました');
-    renderMatching();
     showScreen('screen-list');
   });
 </script>
