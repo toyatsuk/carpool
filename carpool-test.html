@@ -221,74 +221,79 @@
     sub.textContent = 'ドライバー ' + d + '人 / 相乗り希望 ' + r + '人';
   }
 
+  // 同期処理の実行中フラグ（二重実行防止）
+  let isSyncing = false;
+
   // マッチング同期処理
-  // 1. 削除されたentryに紐づくmatchを削除
-  // 2. 新しいentryをマッチング待ちリストからマッチング
   async function syncMatches() {
-    const entryKeys = new Set(entries.map(e => e.originalKey));
+    if (isSyncing) return;
+    isSyncing = true;
+    try {
+      const entryKeys = new Set(entries.map(e => e.originalKey));
 
-    // 削除されたentryのmatchを除去
-    for (const m of matches) {
-      const driverGone = !entryKeys.has(m.driverKey);
-      const riderGone  = !entryKeys.has(m.riderKey);
-      if (driverGone || riderGone) {
-        await remove(ref(db, 'matches/' + m.matchKey));
-      }
-    }
-
-    // 最新のmatchesを取得（削除後）
-    const activeMatches = matches.filter(m => {
-      const entryKeys2 = new Set(entries.map(e => e.originalKey));
-      return entryKeys2.has(m.driverKey) && entryKeys2.has(m.riderKey);
-    });
-
-    // 各ドライバーの使用済み席数を計算
-    const usedSeats = {}; // driverKey -> 使用席数
-    for (const m of activeMatches) {
-      usedSeats[m.driverKey] = (usedSeats[m.driverKey] || 0) + m.seats;
-    }
-
-    // マッチング済み乗客のoriginalKey一覧
-    const matchedRiderKeys = new Set(activeMatches.map(m => m.riderKey));
-
-    // ドライバーを成東駅優先・登録順で並べる
-    const drivers = entries.filter(e => e.role === 'driver');
-    const sortedDrivers = [
-      ...drivers.filter(d => d.origin.includes('成東駅')),
-      ...drivers.filter(d => !d.origin.includes('成東駅'))
-    ];
-
-    // マッチング待ち乗客（登録順）
-    const unmatchedRiders = entries.filter(e => e.role === 'rider' && !matchedRiderKeys.has(e.originalKey));
-
-    // 新たにマッチング
-    for (const driver of sortedDrivers) {
-      const totalSeats = parseCount(driver.count);
-      const used = usedSeats[driver.originalKey] || 0;
-      let available = totalSeats - used;
-      if (available <= 0) continue;
-
-      const pool = unmatchedRiders.filter(r =>
-        r.origin.trim() === driver.origin.trim() && !matchedRiderKeys.has(r.originalKey)
-      );
-
-      for (const rider of pool) {
-        if (available <= 0) break;
-        const riderSeats = parseCount(rider.count);
-        if (riderSeats <= available) {
-          // マッチング確定・保存
-          const newMatch = {
-            driverKey: driver.originalKey,
-            riderKey:  rider.originalKey,
-            seats: riderSeats,
-            ts: nowTs()
-          };
-          await push(matchesRef, newMatch);
-          matchedRiderKeys.add(rider.originalKey);
-          available -= riderSeats;
-          usedSeats[driver.originalKey] = (usedSeats[driver.originalKey] || 0) + riderSeats;
+      // 削除されたentryのmatchを除去
+      for (const m of matches) {
+        const driverGone = !entryKeys.has(m.driverKey);
+        const riderGone  = !entryKeys.has(m.riderKey);
+        if (driverGone || riderGone) {
+          await remove(ref(db, 'matches-test/' + m.matchKey));
         }
       }
+
+      // 有効なmatchesのみ残す
+      const activeMatches = matches.filter(m =>
+        entryKeys.has(m.driverKey) && entryKeys.has(m.riderKey)
+      );
+
+      // 各ドライバーの使用済み席数
+      const usedSeats = {};
+      for (const m of activeMatches) {
+        usedSeats[m.driverKey] = (usedSeats[m.driverKey] || 0) + m.seats;
+      }
+
+      // マッチング済み乗客
+      const matchedRiderKeys = new Set(activeMatches.map(m => m.riderKey));
+
+      // ドライバーを成東駅優先・登録順で並べる
+      const drivers = entries.filter(e => e.role === 'driver');
+      const sortedDrivers = [
+        ...drivers.filter(d => d.origin.includes('成東駅')),
+        ...drivers.filter(d => !d.origin.includes('成東駅'))
+      ];
+
+      // マッチング待ち乗客（登録順）
+      const unmatchedRiders = entries.filter(e =>
+        e.role === 'rider' && !matchedRiderKeys.has(e.originalKey)
+      );
+
+      // 新たにマッチング
+      for (const driver of sortedDrivers) {
+        const totalSeats = parseCount(driver.count);
+        let available = totalSeats - (usedSeats[driver.originalKey] || 0);
+        if (available <= 0) continue;
+
+        const pool = unmatchedRiders.filter(r =>
+          r.origin.trim() === driver.origin.trim() && !matchedRiderKeys.has(r.originalKey)
+        );
+
+        for (const rider of pool) {
+          if (available <= 0) break;
+          const riderSeats = parseCount(rider.count);
+          if (riderSeats <= available) {
+            await push(matchesRef, {
+              driverKey: driver.originalKey,
+              riderKey:  rider.originalKey,
+              seats: riderSeats,
+              ts: nowTs()
+            });
+            matchedRiderKeys.add(rider.originalKey);
+            available -= riderSeats;
+            usedSeats[driver.originalKey] = (usedSeats[driver.originalKey] || 0) + riderSeats;
+          }
+        }
+      }
+    } finally {
+      isSyncing = false;
     }
   }
 
