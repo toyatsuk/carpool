@@ -204,16 +204,15 @@
       const tb = b.ts || '';
       return ta < tb ? -1 : ta > tb ? 1 : 0;
     });
-    // 2桁IDを自動付与してFirebaseに保存（idがない or 順番が変わった場合のみ）
-    let needsUpdate = false;
-    entries.forEach((e, i) => {
-      const newId = String(i + 1).padStart(2, '0');
-      if (e.id !== newId) needsUpdate = true;
-      e.id = newId;
-    });
-    if (needsUpdate) {
-      for (const e of entries) {
+    // IDがない人にだけ新しいIDを付与（既存IDは変更しない）
+    // 既存の最大IDを取得
+    const existingIds = entries.filter(e => e.id).map(e => parseInt(e.id));
+    let nextId = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
+    for (const e of entries) {
+      if (!e.id) {
+        e.id = String(nextId).padStart(2, '0');
         await set(ref(db, 'entries/' + e.firebaseKey + '/id'), e.id);
+        nextId++;
       }
     }
     updateSubTitle();
