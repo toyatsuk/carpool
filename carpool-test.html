@@ -192,7 +192,7 @@
   let editKey = '', editCurrentCount = 0;
 
   // リアルタイム同期
-  onValue(entriesRef, (snapshot) => {
+  onValue(entriesRef, async (snapshot) => {
     entries = [];
     snapshot.forEach(child => {
       const v = child.val();
@@ -204,6 +204,18 @@
       const tb = b.ts || '';
       return ta < tb ? -1 : ta > tb ? 1 : 0;
     });
+    // 2桁IDを自動付与してFirebaseに保存（idがない or 順番が変わった場合のみ）
+    let needsUpdate = false;
+    entries.forEach((e, i) => {
+      const newId = String(i + 1).padStart(2, '0');
+      if (e.id !== newId) needsUpdate = true;
+      e.id = newId;
+    });
+    if (needsUpdate) {
+      for (const e of entries) {
+        await set(ref(db, 'entries/' + e.firebaseKey + '/id'), e.id);
+      }
+    }
     updateSubTitle();
     renderMatching();
   });
@@ -301,7 +313,7 @@
         const commentSection = buildCommentSection([driver, ...assigned]);
         return '<div class="match-card' + (isFull ? ' full' : '') + '">'
           + '<div class="pickup-tag">📍 ' + driver.origin + '</div>'
-          + '<div class="driver-row"><span style="font-size:18px">🚗</span><span class="driver-name">' + driver.name + '</span>' + badge + '</div>'
+          + '<div class="driver-row"><span style="font-size:18px">🚗</span></span><span class="driver-name">' + driver.name + '</span>' + badge + '</div>'
           + '<hr class="divider">'
           + riderRows + emptyRows
           + commentSection
@@ -358,7 +370,9 @@
     const err = !name ? 'お名前を入力してください' : !roleVal ? '役割を選択してください' : !originVal ? 'ピック場所を選択してください' : (originVal==='その他'&&!other) ? 'ピック場所の詳細を入力してください' : !count ? '人数を選択してください' : '';
     if (err) { errEl.textContent = err; errEl.style.display = 'block'; return; }
     const origin = originVal === 'その他' ? other : originVal;
-    await push(entriesRef, { name, role: roleVal, origin, count, note, ts: nowTs() });
+    // ts順のID付与のため全件取得してIDを計算
+    const newId = String(entries.length + 1).padStart(2, '0');
+    await push(entriesRef, { name, role: roleVal, origin, count, note, ts: nowTs(), id: newId });
     showToast('登録しました！');
     resetForm();
     showScreen('screen-list');
