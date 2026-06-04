@@ -48,7 +48,7 @@
   .comment-name { font-weight: 600; color: #444; }
   .comment-ts { font-size: 11px; color: #bbb; margin-left: 4px; }
   .unmatched-box { background: #fff; border-radius: 14px; padding: 1rem 1.25rem; margin-top: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
-  .unmatched-title { font-size: 13px; color: #888; margin-bottom: 10px; display: flex; align-items: center; gap: 5px; }
+  .unmatched-title { font-size: 13px; color: #888; margin-bottom: 10px; }
   .empty-msg { text-align: center; padding: 3rem 0; font-size: 14px; color: #aaa; }
   .loading { text-align: center; padding: 2rem; color: #aaa; font-size: 14px; }
   .bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #eee; padding: 0.75rem 1rem; display: flex; gap: 8px; max-width: 480px; margin: 0 auto; }
@@ -189,10 +189,57 @@
   const matchesRef = ref(db, 'matches-test');
 
   let entries = [];
-  let matches = []; // [{ matchKey, driverID, riders:[{riderID, seats}], seats(空き) }]
+  let matches = [];
   let roleVal = '', originVal = '';
   let editKey = '', editCurrentCount = 0;
   let syncing = false;
+
+  // matchオブジェクトをFirebase保存用フラット形式に変換
+  // { driverID, driverName, rider01ID, rider01Name, rider02ID, rider02Name, ..., seats }
+  function buildMatchData(driverEntry, riderList, availableSeats) {
+    const data = {
+      driverID: driverEntry.id,
+      driverName: driverEntry.name,
+      seats: availableSeats
+    };
+    riderList.forEach((r, i) => {
+      const n = String(i + 1).padStart(2, '0');
+      data['rider' + n + 'ID']   = r.id;
+      data['rider' + n + 'Name'] = r.name;
+      data['rider' + n + 'Seats'] = r.seats;
+    });
+    return data;
+  }
+
+  // フラット形式のmatchからriderListを復元
+  function extractRiders(match) {
+    const riders = [];
+    let i = 1;
+    while (true) {
+      const n = String(i).padStart(2, '0');
+      if (!match['rider' + n + 'ID']) break;
+      riders.push({
+        id:    match['rider' + n + 'ID'],
+        name:  match['rider' + n + 'Name'] || '',
+        seats: match['rider' + n + 'Seats'] || 1
+      });
+      i++;
+    }
+    return riders;
+  }
+
+  function getEntryById(id) {
+    return entries.find(e => e.id === id);
+  }
+
+  function parseCount(str) {
+    const m = str ? str.match(/\d+/) : null;
+    return m ? parseInt(m[0]) : 1;
+  }
+
+  function nowTs() {
+    return new Date().toLocaleString('ja-JP', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  }
 
   // entries リアルタイム同期
   onValue(entriesRef, async (snapshot) => {
@@ -201,7 +248,6 @@
       const v = child.val();
       entries.push({ ...v, origin: (v.origin||'').trim(), firebaseKey: child.key });
     });
-    // ts順ソート
     entries.sort((a, b) => (a.ts||'') < (b.ts||'') ? -1 : (a.ts||'') > (b.ts||'') ? 1 : 0);
     // IDがない人に固定IDを付与
     const existingIds = entries.filter(e => e.id).map(e => parseInt(e.id));
@@ -217,15 +263,13 @@
     renderMatching();
   });
 
-  // matches リアルタイム同期
-  onValue(matchesRef, async (snapshot) => {
+  // matches リアルタイム同期（表示のみ・自動sync無し）
+  onValue(matchesRef, (snapshot) => {
     matches = [];
     snapshot.forEach(child => {
       matches.push({ ...child.val(), matchKey: child.key });
     });
     renderMatching();
-    // 削除された乗客のriderIDをmatchesから除去＋空き席更新
-    if (!syncing) await syncMatchesWithEntries();
   });
 
   function updateSubTitle() {
@@ -236,48 +280,26 @@
     sub.textContent = 'ドライバー ' + d + '人 / 相乗り希望 ' + r + '人';
   }
 
-  function parseCount(str) {
-    const m = str ? str.match(/\d+/) : null;
-    return m ? parseInt(m[0]) : 1;
-  }
-
-  function nowTs() {
-    return new Date().toLocaleString('ja-JP', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
-  }
-
-  function getEntryById(id) {
-    return entries.find(e => e.id === id);
-  }
-
-  // matchesとentriesの整合性を保つ
-  // 削除された乗客・ドライバーをmatchesから除去
-  // ドライバーの席数変更に伴う空き席更新
-  // 未マッチ乗客の自動マッチング
   async function syncMatchesWithEntries() {
     if (syncing) return;
     syncing = true;
     try {
       const entryIds = new Set(entries.map(e => e.id));
-      const drivers = entries.filter(e => e.role === 'driver');
 
+      // 削除されたentry・席数変更をmatchesに反映
       for (const match of matches) {
-        // ドライバーが削除された場合はmatchを丸ごと削除
+        // ドライバーが削除された場合はmatch丸ごと削除
         if (!entryIds.has(match.driverID)) {
           await remove(ref(db, 'matches-test/' + match.matchKey));
           continue;
         }
-        // 乗客が削除された場合はriderIDを除去
         const driver = getEntryById(match.driverID);
         const totalSeats = parseCount(driver.count);
-        let riders = (match.riders || []).filter(r => entryIds.has(r.riderID));
-        const usedSeats = riders.reduce((s, r) => s + (r.seats||1), 0);
+        // 削除された乗客を除去
+        const currentRiders = extractRiders(match).filter(r => entryIds.has(r.id));
+        const usedSeats = currentRiders.reduce((s, r) => s + r.seats, 0);
         const availableSeats = totalSeats - usedSeats;
-        // 空き席数・ridersを更新
-        await set(ref(db, 'matches-test/' + match.matchKey), {
-          driverID: match.driverID,
-          riders: riders,
-          seats: availableSeats
-        });
+        await set(ref(db, 'matches-test/' + match.matchKey), buildMatchData(driver, currentRiders, availableSeats));
       }
 
       // 最新matchesを再取得
@@ -285,28 +307,25 @@
       const currentMatches = [];
       matchSnap.forEach(child => currentMatches.push({ ...child.val(), matchKey: child.key }));
 
-      // 既にマッチング済みの乗客IDを収集
+      // マッチング済みriderIDを収集
       const matchedRiderIds = new Set();
       for (const m of currentMatches) {
-        (m.riders||[]).forEach(r => matchedRiderIds.add(r.riderID));
+        extractRiders(m).forEach(r => matchedRiderIds.add(r.id));
       }
 
-      // matchesにないドライバーは空き席のみ（matchは作らない、表示側で対応）
-
       // 未マッチ乗客を自動マッチング（ts順・ピック場所一致・席数が合う）
-      const unmatchedRiders = entries.filter(e => e.role === 'rider' && !matchedRiderIds.has(e.id));
-
-      // 成東駅ドライバー優先・ts順
+      const drivers = entries.filter(e => e.role === 'driver');
       const sortedDrivers = [
         ...drivers.filter(d => d.origin.includes('成東駅')),
         ...drivers.filter(d => !d.origin.includes('成東駅'))
       ];
+      const unmatchedRiders = entries.filter(e => e.role === 'rider' && !matchedRiderIds.has(e.id));
 
       for (const driver of sortedDrivers) {
-        // このドライバーのmatchを取得
         let driverMatch = currentMatches.find(m => m.driverID === driver.id);
         const totalSeats = parseCount(driver.count);
-        let usedSeats = driverMatch ? (driverMatch.riders||[]).reduce((s,r) => s+(r.seats||1), 0) : 0;
+        let currentRiders = driverMatch ? extractRiders(driverMatch) : [];
+        let usedSeats = currentRiders.reduce((s, r) => s + r.seats, 0);
         let available = totalSeats - usedSeats;
         if (available <= 0) continue;
 
@@ -318,29 +337,15 @@
           if (available <= 0) break;
           const riderSeats = parseCount(rider.count);
           if (riderSeats <= available) {
-            if (driverMatch) {
-              // 既存matchにriderを追加
-              const newRiders = [...(driverMatch.riders||[]), { riderID: rider.id, seats: riderSeats }];
-              const newAvailable = available - riderSeats;
-              await set(ref(db, 'matches-test/' + driverMatch.matchKey), {
-                driverID: driver.id,
-                riders: newRiders,
-                seats: newAvailable
-              });
-              driverMatch.riders = newRiders;
-              available = newAvailable;
-            } else {
-              // 新規matchを作成
-              const newMatchRef = await push(matchesRef, {
-                driverID: driver.id,
-                riders: [{ riderID: rider.id, seats: riderSeats }],
-                seats: available - riderSeats
-              });
-              driverMatch = { matchKey: newMatchRef.key, driverID: driver.id, riders: [{ riderID: rider.id, seats: riderSeats }], seats: available - riderSeats };
-              available -= riderSeats;
-            }
+            currentRiders.push({ id: rider.id, name: rider.name, seats: riderSeats });
+            available -= riderSeats;
             matchedRiderIds.add(rider.id);
-            usedSeats += riderSeats;
+            if (driverMatch) {
+              await set(ref(db, 'matches-test/' + driverMatch.matchKey), buildMatchData(driver, currentRiders, available));
+            } else {
+              const newRef = await push(matchesRef, buildMatchData(driver, currentRiders, available));
+              driverMatch = { matchKey: newRef.key, driverID: driver.id };
+            }
           }
         }
       }
@@ -357,7 +362,7 @@
     });
     if (!unique.length) return '';
     const rows = unique.map(p =>
-      '<div class="comment-row"><span class="comment-name">' + p.name + '</span>：' + p.note + '<span class="comment-ts">（' + (p.ts || '') + '）</span></div>'
+      '<div class="comment-row"><span class="comment-name">' + p.name + '</span>：' + p.note + '<span class="comment-ts">（' + (p.ts||'') + '）</span></div>'
     ).join('');
     return '<div class="comment-section">' + rows + '</div>';
   }
@@ -373,9 +378,8 @@
       ...drivers.filter(d => !d.origin.includes('成東駅'))
     ];
 
-    // matchesで使われているriderIDを収集
     const matchedRiderIds = new Set();
-    matches.forEach(m => (m.riders||[]).forEach(r => matchedRiderIds.add(r.riderID)));
+    matches.forEach(m => extractRiders(m).forEach(r => matchedRiderIds.add(r.id)));
 
     let html = '';
     if (!sortedDrivers.length) {
@@ -384,17 +388,16 @@
       html = sortedDrivers.map(driver => {
         const totalSeats = parseCount(driver.count);
         const driverMatch = matches.find(m => m.driverID === driver.id);
-        const assignedRiders = driverMatch ? (driverMatch.riders||[]) : [];
-        const usedSeats = assignedRiders.reduce((s, r) => s + (r.seats||1), 0);
+        const assignedRiders = driverMatch ? extractRiders(driverMatch) : [];
+        const usedSeats = assignedRiders.reduce((s, r) => s + r.seats, 0);
         const remaining = totalSeats - usedSeats;
         const isFull = remaining <= 0;
 
         const riderRows = assignedRiders.map(r => {
-          const rider = getEntryById(r.riderID);
-          if (!rider) return '';
-          const seats = r.seats || 1;
-          const label = seats > 1 ? ' <span style="font-size:12px;color:#888">×' + seats + '</span>' : '';
-          return '<div class="rider-row"><span style="font-size:16px">💺</span><span class="rider-name">' + rider.name + label + '</span><span class="rider-origin">' + rider.origin + '</span></div>';
+          const entry = getEntryById(r.id);
+          if (!entry) return '';
+          const label = r.seats > 1 ? ' <span style="font-size:12px;color:#888">×' + r.seats + '</span>' : '';
+          return '<div class="rider-row"><span style="font-size:16px">💺</span><span class="rider-name">' + entry.name + label + '</span><span class="rider-origin">' + entry.origin + '</span></div>';
         }).join('');
 
         const emptyRows = !isFull ? Array.from({length: remaining}).map(() =>
@@ -405,7 +408,7 @@
           ? '<span class="seats-badge full-badge">満席</span>'
           : '<span class="seats-badge open">あと ' + remaining + '席</span>';
 
-        const allPeople = [driver, ...assignedRiders.map(r => getEntryById(r.riderID)).filter(Boolean)];
+        const allPeople = [driver, ...assignedRiders.map(r => getEntryById(r.id)).filter(Boolean)];
         const commentSection = buildCommentSection(allPeople);
 
         return '<div class="match-card' + (isFull ? ' full' : '') + '">'
@@ -418,7 +421,6 @@
       }).join('');
     }
 
-    // マッチング待ち
     const unmatchedRiders = entries.filter(e => e.role === 'rider' && !matchedRiderIds.has(e.id));
     if (unmatchedRiders.length) {
       const rows = unmatchedRiders.map(r => {
@@ -429,7 +431,6 @@
       const commentSection = buildCommentSection(unmatchedRiders);
       html += '<div class="unmatched-box"><div class="unmatched-title">⏳ マッチング待ち（' + unmatchedRiders.length + '人）</div>' + rows + commentSection + '</div>';
     }
-
     el.innerHTML = html;
   }
 
@@ -471,6 +472,7 @@
     if (err) { errEl.textContent = err; errEl.style.display = 'block'; return; }
     const origin = originVal === 'その他' ? other : originVal;
     await push(entriesRef, { name, role: roleVal, origin, count, note, ts: nowTs() });
+    await syncMatchesWithEntries();
     showToast('登録しました！');
     resetForm();
     showScreen('screen-list');
@@ -508,7 +510,7 @@
     editCurrentCount = parseCount(found.count);
     const roleLabel = found.role === 'driver' ? '🚗 車を出せる' : '💺 相乗りしたい';
     document.getElementById('edit-summary').innerHTML =
-      'ID：<strong>' + found.id + '</strong>　' + roleLabel + '<br><strong>' + found.name + '</strong>　📍 ' + found.origin + '　👥 ' + (found.count || '');
+      'ID：<strong>' + found.id + '</strong>　' + roleLabel + '<br><strong>' + found.name + '</strong>　📍 ' + found.origin + '　👥 ' + (found.count||'');
     const countWrap = document.getElementById('e-count-wrap');
     if (found.role === 'driver') {
       countWrap.style.display = 'block';
@@ -541,6 +543,10 @@
       name: entry.name, role: entry.role, origin: entry.origin,
       count: count, note: note, ts: entry.ts, id: entry.id
     });
+    // ドライバーの人数が増えた場合は再マッチング
+    if (entry.role === 'driver' && parseCount(count) > editCurrentCount) {
+      await syncMatchesWithEntries();
+    }
     showToast('更新しました！');
     showScreen('screen-list');
   });
@@ -554,6 +560,7 @@
   document.getElementById('confirm-ok').addEventListener('click', async () => {
     document.getElementById('confirm-overlay').classList.remove('active');
     await remove(ref(db, 'entries/' + editKey));
+    await syncMatchesWithEntries();
     showToast('削除しました');
     showScreen('screen-list');
   });
