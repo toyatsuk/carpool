@@ -171,7 +171,7 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getDatabase, ref, push, set, get, remove, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { getDatabase, ref, push, set, get, update, remove, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyDEJscf8STjYHOIcsFn6Fmxut098SiUf3U",
@@ -194,9 +194,6 @@
   let roleVal = '', originVal = '';
   let editKey = '', editCurrentCount = 0;
   let runningInit = false;
-  let runningAdd = false;
-  let runningRemove = false;
-  let runningUpdate = false;
 
   function parseCount(str) {
     const m = str ? str.match(/\d+/) : null;
@@ -256,6 +253,7 @@
         ...drivers.filter(d => !d.origin.includes('成東駅'))
       ];
       const matchedIds = new Set();
+      const updates = {};
 
       for (const driver of sortedDrivers) {
         const totalSeats = parseCount(driver.count);
@@ -273,8 +271,13 @@
             usedSeats += riderSeats;
           }
         }
-        await push(matchesRef, buildMatchData(driver, assignedRiders, totalSeats - usedSeats));
+        const newKey = push(matchesRef).key;
+        updates[newKey] = buildMatchData(driver, assignedRiders, totalSeats - usedSeats);
       }
+      // 全件を一括保存（atomic）
+      await update(matchesRef, updates);
+      // ローカルのmatches変数を直接更新（onValueの遅延を回避）
+      matches = Object.entries(updates).map(([key, val]) => ({ ...val, matchKey: key }));
     } finally {
       runningInit = false;
     }
@@ -284,21 +287,27 @@
   // 新規登録時：空き席のあるドライバーにのみ追加マッチング
   // ============================================================
   async function addMatchForNewEntry(newEntry) {
-    if (runningAdd) return;
-    runningAdd = true;
     try {
+      // matches变数を使用（initMatchingで直接更新済み）
+      const currentMatches = [...matches];
+
       if (newEntry.role === 'driver') {
         // 新ドライバー：未マッチの乗客を割り当て
-        const matchSnap = await get(matchesRef);
-        const currentMatches = [];
-        matchSnap.forEach(child => currentMatches.push({ ...child.val(), matchKey: child.key }));
         const matchedRiderIds = new Set();
         currentMatches.forEach(m => extractRiders(m).forEach(r => matchedRiderIds.add(r.id)));
 
         const totalSeats = parseCount(newEntry.count);
         const assignedRiders = [];
         let usedSeats = 0;
-        const pool = entries.filter(e =>
+        // Firebaseから最新entriesを取得して乗客プールを作成
+        const freshSnap1 = await get(entriesRef);
+        const freshEntries1 = [];
+        freshSnap1.forEach(child => {
+          const v = child.val();
+          freshEntries1.push({ ...v, origin: (v.origin||'').trim() });
+        });
+        freshEntries1.sort((a, b) => (a.ts||'') < (b.ts||'') ? -1 : 1);
+        const pool = freshEntries1.filter(e =>
           e.role === 'rider' &&
           e.origin.trim() === newEntry.origin.trim() &&
           !matchedRiderIds.has(e.id)
@@ -314,30 +323,31 @@
         await push(matchesRef, buildMatchData(newEntry, assignedRiders, totalSeats - usedSeats));
 
       } else {
-        // 新乗客：空き席のあるドライバーを探してマッチング
-        const matchSnap = await get(matchesRef);
-        const currentMatches = [];
-        matchSnap.forEach(child => currentMatches.push({ ...child.val(), matchKey: child.key }));
-
-        // 既にマッチング済みかチェック
+        // 新乗客：既にマッチング済みかチェック
         for (const m of currentMatches) {
-          if (extractRiders(m).some(r => r.id === newEntry.id)) return; // 既にマッチング済み
+          if (extractRiders(m).some(r => r.id === newEntry.id)) return;
         }
 
         const riderSeats = parseCount(newEntry.count);
-        // 成東駅優先・ts順で空き席のあるドライバーを探す
-        const drivers = entries.filter(e => e.role === 'driver');
+        // Firebaseから最新entriesを取得してドライバー一覧を作成
+        const freshSnap2 = await get(entriesRef);
+        const freshEntries2 = [];
+        freshSnap2.forEach(child => {
+          const v = child.val();
+          freshEntries2.push({ ...v, origin: (v.origin||'').trim() });
+        });
+        freshEntries2.sort((a, b) => (a.ts||'') < (b.ts||'') ? -1 : 1);
+        const freshDrivers2 = freshEntries2.filter(e => e.role === 'driver');
         const sortedDrivers = [
-          ...drivers.filter(d => d.origin.includes('成東駅')),
-          ...drivers.filter(d => !d.origin.includes('成東駅'))
+          ...freshDrivers2.filter(d => d.origin.includes('成東駅')),
+          ...freshDrivers2.filter(d => !d.origin.includes('成東駅'))
         ];
 
         for (const driver of sortedDrivers) {
           if (driver.origin.trim() !== newEntry.origin.trim()) continue;
           const driverMatch = currentMatches.find(m => m.driverID === driver.id);
-          if (!driverMatch) continue; // matchesにないドライバーはスキップ
+          if (!driverMatch) continue;
           if (driverMatch.seats >= riderSeats) {
-            // 空き席に追加
             const currentRiders = extractRiders(driverMatch);
             currentRiders.push({ id: newEntry.id, name: newEntry.name, seats: riderSeats });
             const newSeats = driverMatch.seats - riderSeats;
@@ -347,8 +357,8 @@
           }
         }
       }
-    } finally {
-      runningAdd = false;
+    } catch(e) {
+      console.error('addMatchForNewEntry error:', e);
     }
   }
 
@@ -356,12 +366,9 @@
   // 削除時：その人のmatchを除去して空き席を増やす
   // ============================================================
   async function removeFromMatching(deletedEntry) {
-    if (runningRemove) return;
-    runningRemove = true;
     try {
-      const matchSnap = await get(matchesRef);
-      const currentMatches = [];
-      matchSnap.forEach(child => currentMatches.push({ ...child.val(), matchKey: child.key }));
+      // matches変数（onValueで常に最新）を使用
+      const currentMatches = [...matches];
 
       if (deletedEntry.role === 'driver') {
         // ドライバー削除：そのmatchを丸ごと削除
@@ -370,24 +377,32 @@
           await remove(ref(db, MATCHES_PATH + '/' + driverMatch.matchKey));
         }
       } else {
-        // 乗客削除：matchからriderを除去して空き席を増やす
+        // 乗客削除：matchからriderを除去して空き席を再計算
         for (const match of currentMatches) {
           const riders = extractRiders(match);
           const idx = riders.findIndex(r => r.id === deletedEntry.id);
           if (idx !== -1) {
-            const removedSeats = riders[idx].seats;
             riders.splice(idx, 1);
-            const driver = entries.find(e => e.id === match.driverID);
+            // Firebaseから最新のドライバー情報を取得
+            const freshSnap3 = await get(entriesRef);
+            let driver = null;
+            freshSnap3.forEach(child => {
+              const v = child.val();
+              if (v.id === match.driverID) driver = { ...v, origin: (v.origin||'').trim() };
+            });
             if (!driver) continue;
-            const newSeats = match.seats + removedSeats;
+            // 総定員 - 残り乗客数 = 空き席数
+            const totalSeats = parseCount(driver.count);
+            const usedSeats = riders.reduce((s, r) => s + (r.seats || 1), 0);
+            const newSeats = totalSeats - usedSeats;
             await set(ref(db, MATCHES_PATH + '/' + match.matchKey),
               buildMatchData(driver, riders, newSeats));
             break;
           }
         }
       }
-    } finally {
-      runningRemove = false;
+    } catch(e) {
+      console.error('removeFromMatching error:', e);
     }
   }
 
@@ -395,8 +410,6 @@
   // ドライバーの人数増加時：増えた分だけ空き席を更新
   // ============================================================
   async function updateDriverSeats(driverEntry, oldCount) {
-    if (runningUpdate) return;
-    runningUpdate = true;
     try {
       const matchSnap = await get(matchesRef);
       const currentMatches = [];
@@ -405,13 +418,12 @@
       if (!driverMatch) return;
       const addedSeats = parseCount(driverEntry.count) - oldCount;
       if (addedSeats <= 0) return;
-      // matchKeyを除いたデータを作成してseatsだけ増やす
       const currentRiders = extractRiders(driverMatch);
       const newSeats = driverMatch.seats + addedSeats;
       await set(ref(db, MATCHES_PATH + '/' + driverMatch.matchKey),
         buildMatchData(driverEntry, currentRiders, newSeats));
-    } finally {
-      runningUpdate = false;
+    } catch(e) {
+      console.error('updateDriverSeats error:', e);
     }
   }
 
@@ -465,7 +477,7 @@
       await initMatching(allEntries);
     }
   }
-  initialize();
+  const initializePromise = initialize();
 
   function updateSubTitle() {
     const sub = document.getElementById('list-sub');
@@ -590,10 +602,19 @@
     const other = document.getElementById('f-other').value.trim();
     const err = !name ? 'お名前を入力してください' : !roleVal ? '役割を選択してください' : !originVal ? 'ピック場所を選択してください' : (originVal==='その他'&&!other) ? 'ピック場所の詳細を入力してください' : !count ? '人数を選択してください' : '';
     if (err) { errEl.textContent = err; errEl.style.display = 'block'; return; }
+    // 初回マッチングの完了を待つ
+    await initializePromise;
     const origin = originVal === 'その他' ? other : originVal;
-    const newRef = await push(entriesRef, { name, role: roleVal, origin, count, note, ts: nowTs() });
-    // IDを付与
-    const newId = String(entries.length + 1).padStart(2, '0');
+    // IDを付与（Firebaseから最新データを直接取得）
+    const freshIdSnap = await get(entriesRef);
+    const freshIds = [];
+    freshIdSnap.forEach(child => {
+      const id = child.val().id;
+      if (id) freshIds.push(parseInt(id));
+    });
+    const newId = String((freshIds.length > 0 ? Math.max(...freshIds) : 0) + 1).padStart(2, '0');
+    // push+setを1回にまとめる
+    const newRef = push(entriesRef);
     await set(newRef, { name, role: roleVal, origin, count, note, ts: nowTs(), id: newId });
     // 新規エントリーにマッチング追加
     await addMatchForNewEntry({ id: newId, name, role: roleVal, origin, count, note });
