@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>澤家GF2026 あいのり[TEST-v39]</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; background: #f5f5f5; color: #1a1a1a; }
+  .container { max-width: 480px; margin: 0 auto; padding: 1rem 1rem 5rem; }
+  .screen { display: none; }
+  .screen.active { display: block; }
+  .page-title { font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; padding-top: 1rem; }
+  .page-sub { font-size: 13px; color: #666; margin-bottom: 1.5rem; }
+  .card { background: #fff; border-radius: 14px; padding: 1rem 1.25rem; margin-bottom: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+  label { font-size: 13px; color: #666; display: block; margin-bottom: 4px; margin-top: 14px; }
+  label:first-of-type { margin-top: 0; }
+  input, select, textarea { width: 100%; font-size: 16px; padding: 10px 12px; border: 1px solid #ddd; border-radius: 10px; background: #fafafa; outline: none; -webkit-appearance: none; appearance: none; }
+  input:focus, select:focus, textarea:focus { border-color: #888; background: #fff; }
+  textarea { height: 72px; resize: vertical; }
+  select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+  .toggle-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+  .toggle-btn { padding: 11px 6px; border: 1.5px solid #ddd; border-radius: 10px; background: #fafafa; color: #444; font-size: 14px; cursor: pointer; text-align: center; transition: all 0.15s; }
+  .toggle-btn.sel-green { background: #e8f5e9; border-color: #2e7d32; color: #1b5e20; font-weight: 600; }
+  .toggle-btn.sel-blue  { background: #e3f2fd; border-color: #1565c0; color: #0d47a1; font-weight: 600; }
+  .toggle-btn.sel-amber { background: #fff8e1; border-color: #f57f17; color: #e65100; font-weight: 600; }
+  .error-msg { font-size: 12px; color: #c62828; margin-top: 6px; display: none; }
+  .submit-btn { width: 100%; padding: 14px; background: #1a1a1a; color: #fff; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 0.75rem; }
+  .submit-btn:active { opacity: 0.85; }
+  .text-link { background: none; border: none; color: #888; font-size: 13px; cursor: pointer; padding: 10px; display: block; margin: 0 auto; text-align: center; }
+  .notice { font-size: 12px; color: #c62828; background: #fff0f0; border-radius: 10px; padding: 8px 12px; margin-bottom: 1rem; }
+  .match-card { background: #fff; border-radius: 14px; padding: 1rem 1.25rem; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+  .match-card.full { opacity: 0.4; }
+  .pickup-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; background: #fff8e1; color: #e65100; border-radius: 20px; padding: 3px 9px; font-weight: 600; margin-bottom: 10px; }
+  .driver-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .driver-name { font-size: 16px; font-weight: 600; }
+  .seats-badge { margin-left: auto; font-size: 12px; padding: 3px 10px; border-radius: 20px; font-weight: 600; white-space: nowrap; }
+  .seats-badge.open { background: #e8f5e9; color: #1b5e20; }
+  .seats-badge.full-badge { background: #f0f0f0; color: #888; }
+  .divider { border: none; border-top: 1px solid #f0f0f0; margin: 8px 0; }
+  .rider-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+  .rider-name { font-size: 14px; color: #1a1a1a; }
+  .rider-origin { font-size: 12px; color: #999; margin-left: auto; }
+  .empty-seat { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+  .empty-label { font-size: 13px; color: #ccc; }
+  .comment-section { margin-top: 10px; padding-top: 10px; border-top: 1px solid #f0f0f0; }
+  .comment-row { font-size: 12px; color: #666; padding: 2px 0; line-height: 1.6; }
+  .comment-name { font-weight: 600; color: #444; }
+  .comment-ts { font-size: 11px; color: #bbb; margin-left: 4px; }
+  .unmatched-box { background: #fff; border-radius: 14px; padding: 1rem 1.25rem; margin-top: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+  .unmatched-title { font-size: 13px; color: #888; margin-bottom: 10px; }
+  .empty-msg { text-align: center; padding: 3rem 0; font-size: 14px; color: #aaa; }
+  .loading { text-align: center; padding: 2rem; color: #aaa; font-size: 14px; }
+  .bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #eee; padding: 0.75rem 1rem; display: flex; gap: 8px; max-width: 480px; margin: 0 auto; }
+  .bar-btn { flex: 1; padding: 12px 6px; border: 1.5px solid #ddd; border-radius: 10px; background: #fff; color: #1a1a1a; font-size: 13px; cursor: pointer; text-align: center; }
+  .bar-btn.primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; font-weight: 600; }
+  .bar-btn:active { opacity: 0.8; }
+  .search-result { border-radius: 10px; padding: 10px 12px; margin-top: 8px; font-size: 14px; display: none; }
+  .search-result.found { background: #f0f7ff; border: 1px solid #b3d4f5; color: #1565c0; }
+  .search-result.notfound { background: #fff0f0; border: 1px solid #f5c6c6; color: #c62828; }
+  .edit-summary { font-size: 13px; color: #444; background: #f5f5f5; border-radius: 8px; padding: 10px 12px; margin-bottom: 4px; line-height: 1.8; }
+  .delete-btn { width: 100%; padding: 12px; background: #fff; color: #c62828; border: 1.5px solid #f5c6c6; border-radius: 12px; font-size: 15px; cursor: pointer; margin-top: 8px; }
+  .confirm-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 200; display: none; align-items: center; justify-content: center; }
+  .confirm-overlay.active { display: flex; }
+  .confirm-box { background: #fff; border-radius: 16px; padding: 1.5rem 1.25rem; margin: 1rem; width: 100%; max-width: 320px; text-align: center; }
+  .confirm-box p { font-size: 15px; color: #1a1a1a; margin-bottom: 1.25rem; line-height: 1.6; }
+  .confirm-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .confirm-cancel { padding: 12px; border: 1.5px solid #ddd; border-radius: 10px; background: #fff; color: #444; font-size: 15px; cursor: pointer; }
+  .confirm-ok { padding: 12px; border: none; border-radius: 10px; background: #c62828; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: #1b5e20; color: #fff; padding: 10px 20px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 99; white-space: nowrap; }
+  .icon { width: 18px; height: 18px; display: inline-block; vertical-align: -3px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- 登録画面 -->
+  <div class="screen active" id="screen-form">
+    <div class="page-title">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 17H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2v3"/><rect x="9" y="11" width="14" height="10" rx="1"/><circle cx="12" cy="21" r="1"/><circle cx="20" cy="21" r="1"/></svg>
+      澤家GardenFestival2026
+    </div>
+    <div class="page-sub">あいのりマッチングアプリ</div>
+    <div class="card">
+      <label>お名前</label>
+      <input type="text" id="f-name" placeholder="例：山武 太郎" maxlength="30" autocomplete="off">
+      <label>役割</label>
+      <div class="toggle-group">
+        <button class="toggle-btn" id="btn-driver">🚗 車を出せる</button>
+        <button class="toggle-btn" id="btn-rider">💺 相乗りしたい</button>
+      </div>
+      <label>ピック場所</label>
+      <div class="toggle-group">
+        <button class="toggle-btn" id="btn-naruto">成東駅</button>
+        <button class="toggle-btn" id="btn-other">その他</button>
+      </div>
+      <div id="other-wrap" style="display:none;margin-top:8px">
+        <input type="text" id="f-other" placeholder="名称でマッチングします" autocomplete="off">
+      </div>
+      <label id="count-label">乗せられる人数</label>
+      <select id="f-count">
+        <option value="">選択してください</option>
+        <option>1人</option><option>2人</option><option>3人</option><option>4人</option><option>5人</option>
+      </select>
+      <label>メッセージ（任意）</label>
+      <textarea id="f-note" placeholder="最新のメッセージのみが表示されます"></textarea>
+      <div class="error-msg" id="f-error"></div>
+      <button class="submit-btn" id="btn-submit">登録してマッチングを見る →</button>
+    </div>
+    <button class="text-link" id="btn-view-only">登録せずにマッチングを見る</button>
+  </div>
+
+  <!-- マッチング結果画面 -->
+  <div class="screen" id="screen-list">
+    <div class="page-title">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+      マッチング結果
+    </div>
+    <div class="page-sub" id="list-sub">読み込み中...</div>
+    <div class="notice">マッチング変更の必要な場合は、登録の削除を行ってください</div>
+    <div id="match-result"><div class="loading">読み込み中...</div></div>
+    <div class="bottom-bar">
+      <button class="bar-btn" id="btn-refresh">↻ 更新</button>
+      <button class="bar-btn" id="btn-edit-open">✏️ 編集</button>
+      <button class="bar-btn primary" id="btn-go-form">＋ 登録</button>
+    </div>
+  </div>
+
+  <!-- 編集画面 -->
+  <div class="screen" id="screen-edit">
+    <div class="page-title">✏️ 登録を編集</div>
+    <div class="page-sub">名前で自分の登録を検索して編集できます</div>
+    <div class="card">
+      <label>お名前で検索</label>
+      <input type="text" id="e-search" placeholder="登録時の名前を入力" autocomplete="off">
+      <button class="submit-btn" id="btn-search" style="margin-top:10px">検索する</button>
+      <div class="search-result" id="search-result"></div>
+    </div>
+    <div class="card" id="edit-form-card" style="display:none">
+      <div class="edit-summary" id="edit-summary"></div>
+      <div id="e-count-wrap" style="display:none">
+        <label id="e-count-label">乗せられる人数（増加のみ）</label>
+        <select id="e-count">
+          <option value="">選択してください</option>
+          <option>1人</option><option>2人</option><option>3人</option><option>4人</option><option>5人</option>
+        </select>
+      </div>
+      <label>メッセージ</label>
+      <textarea id="e-note" placeholder="最新のメッセージのみが表示されます"></textarea>
+      <div class="error-msg" id="e-error"></div>
+      <button class="submit-btn" id="btn-save">保存する</button>
+      <button class="delete-btn" id="btn-delete">この登録を削除する</button>
+    </div>
+    <div class="bottom-bar">
+      <button class="bar-btn primary" id="btn-edit-back">← マッチングに戻る</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="confirm-overlay" id="confirm-overlay">
+  <div class="confirm-box">
+    <p>この登録を削除しますか？</p>
+    <div class="confirm-btns">
+      <button class="confirm-cancel" id="confirm-cancel">キャンセル</button>
+      <button class="confirm-ok" id="confirm-ok">削除する</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, push, set, get, update, remove, onValue } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDEJscf8STjYHOIcsFn6Fmxut098SiUf3U",
+    authDomain: "gardenfestival260606.firebaseapp.com",
+    databaseURL: "https://gardenfestival260606-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "gardenfestival260606",
+    storageBucket: "gardenfestival260606.firebasestorage.app",
+    messagingSenderId: "1622246208634",
+    appId: "1:1622246208634:web:ae508aa1badaf3c1711fc3"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+  const entriesRef = ref(db, 'entries');
+  const matchesRef = ref(db, 'matches-test-v39');
+  const MATCHES_PATH = 'matches-test-v39';
+
+  let entries = [];
+  let matches = [];
+  let roleVal = '', originVal = '';
+  let editKey = '', editCurrentCount = 0;
+  let runningInit = false;
+
+  function parseCount(str) {
+    const m = str ? str.match(/\d+/) : null;
+    return m ? parseInt(m[0]) : 1;
+  }
+
+  function nowTs() {
+    return new Date().toLocaleString('ja-JP', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+  }
+
+  function getEntryById(id) {
+    return entries.find(e => e.id === id);
+  }
+
+  function buildMatchData(driverEntry, riderList, availableSeats) {
+    const data = {
+      driverID: driverEntry.id,
+      driverName: driverEntry.name,
+      seats: availableSeats
+    };
+    riderList.forEach((r, i) => {
+      const n = String(i + 1).padStart(2, '0');
+      data['rider' + n + 'ID']    = r.id;
+      data['rider' + n + 'Name']  = r.name;
+      data['rider' + n + 'Seats'] = r.seats;
+    });
+    return data;
+  }
+
+  function extractRiders(match) {
+    const riders = [];
+    let i = 1;
+    while (true) {
+      const n = String(i).padStart(2, '0');
+      if (!match['rider' + n + 'ID']) break;
+      riders.push({
+        id:    match['rider' + n + 'ID'],
+        name:  match['rider' + n + 'Name'] || '',
+        seats: match['rider' + n + 'Seats'] || 1
+      });
+      i++;
+    }
+    return riders;
+  }
+
+  // ============================================================
+  // 初回起動時：matchesが空の場合のみ全マッチングを実行
+  // ============================================================
+  async function initMatching(allEntries) {
+    if (runningInit) return;
+    runningInit = true;
+    try {
+      const drivers = allEntries.filter(e => e.role === 'driver');
+      const riders  = allEntries.filter(e => e.role === 'rider');
+      const sortedDrivers = [
+        ...drivers.filter(d => d.origin.includes('成東駅')),
+        ...drivers.filter(d => !d.origin.includes('成東駅'))
+      ];
+      const matchedIds = new Set();
+      const updates = {};
+
+      for (const driver of sortedDrivers) {
+        const totalSeats = parseCount(driver.count);
+        const assignedRiders = [];
+        let usedSeats = 0;
+        const pool = riders.filter(r =>
+          r.origin.trim() === driver.origin.trim() && !matchedIds.has(r.id)
+        );
+        for (const rider of pool) {
+          if (usedSeats >= totalSeats) break;
+          const riderSeats = parseCount(rider.count);
+          if (usedSeats + riderSeats <= totalSeats) {
+            assignedRiders.push({ id: rider.id, name: rider.name, seats: riderSeats });
+            matchedIds.add(rider.id);
+            usedSeats += riderSeats;
+          }
+        }
+        const newKey = push(matchesRef).key;
+        updates[newKey] = buildMatchData(driver, assignedRiders, totalSeats - usedSeats);
+      }
+      // 全件を一括保存（atomic）
+      await update(matchesRef, updates);
+      // ローカルのmatches変数を直接更新（onValueの遅延を回避）
+      matches = Object.entries(updates).map(([key, val]) => ({ ...val, matchKey: key }));
+    } finally {
+      runningInit = false;
+    }
+  }
+
+  // ============================================================
+  // 新規登録時：空き席のあるドライバーにのみ追加マッチング
+  // ============================================================
+  async function addMatchForNewEntry(newEntry) {
+    console.log('▶ addMatchForNewEntry開始:', newEntry.name, newEntry.origin, newEntry.role);
+    try {
+      // matches变数を使用（initMatchingで直接更新済み）
+      const currentMatches = [...matches];
+      console.log('currentMatches件数:', currentMatches.length, currentMatches.map(m => m.driverID));
+
+      if (newEntry.role === 'driver') {
+        // 新ドライバー：未マッチの乗客を割り当て
+        const matchedRiderIds = new Set();
+        currentMatches.forEach(m => extractRiders(m).forEach(r => matchedRiderIds.add(r.id)));
+
+        const totalSeats = parseCount(newEntry.count);
+        const assignedRiders = [];
+        let usedSeats = 0;
+        // Firebaseから最新entriesを取得して乗客プールを作成
+        const freshSnap1 = await get(entriesRef);
+        const freshEntries1 = [];
+        freshSnap1.forEach(child => {
+          const v = child.val();
+          freshEntries1.push({ ...v, origin: (v.origin||'').trim() });
+        });
+        freshEntries1.sort((a, b) => (a.ts||'') < (b.ts||'') ? -1 : 1);
+        const pool = freshEntries1.filter(e =>
+          e.role === 'rider' &&
+          e.origin.trim() === newEntry.origin.trim() &&
+          !matchedRiderIds.has(e.id)
+        );
+        for (const rider of pool) {
+          if (usedSeats >= totalSeats) break;
+          const riderSeats = parseCount(rider.count);
+          if (usedSeats + riderSeats <= totalSeats) {
+            assignedRiders.push({ id: rider.id, name: rider.name, seats: riderSeats });
+            usedSeats += riderSeats;
+          }
+        }
+        await push(matchesRef, buildMatchData(newEntry, assignedRiders, totalSeats - usedSeats));
+
+      } else {
+        // 新乗客：既にマッチング済みかチェック
+        for (const m of currentMatches) {
+          if (extractRiders(m).some(r => r.id === newEntry.id)) return;
+        }
+
+        const riderSeats = parseCount(newEntry.count);
+        // Firebaseから最新entriesを取得してドライバー一覧を作成
+        const freshSnap2 = await get(entriesRef);
+        const freshEntries2 = [];
+        freshSnap2.forEach(child => {
+          const v = child.val();
+          freshEntries2.push({ ...v, origin: (v.origin||'').trim() });
+        });
+        freshEntries2.sort((a, b) => (a.ts||'') < (b.ts||'') ? -1 : 1);
+        const freshDrivers2 = freshEntries2.filter(e => e.role === 'driver');
+        const sortedDrivers = [
+          ...freshDrivers2.filter(d => d.origin.includes('成東駅')),
+          ...freshDrivers2.filter(d => !d.origin.includes('成東駅'))
+        ];
+
+        for (const driver of sortedDrivers) {
+          if (driver.origin.trim() !== newEntry.origin.trim()) continue;
+          console.log('origin一致ドライバー:', driver.name, 'id:', driver.id, typeof driver.id);
+          const driverMatch = currentMatches.find(m => m.driverID === driver.id);
+          console.log('driverMatch:', driverMatch ? 'found seats:' + driverMatch.seats : 'not found');
+          if (!driverMatch) continue;
+          if (driverMatch.seats >= riderSeats) {
+            const currentRiders = extractRiders(driverMatch);
+            currentRiders.push({ id: newEntry.id, name: newEntry.name, seats: riderSeats });
+            const newSeats = driverMatch.seats - riderSeats;
+            await set(ref(db, MATCHES_PATH + '/' + driverMatch.matchKey),
+              buildMatchData(driver, currentRiders, newSeats));
+            break;
+          }
+        }
+      }
+    } catch(e) {
+      console.error('addMatchForNewEntry error:', e);
+    }
+  }
+
+  // ============================================================
+  // 削除時：その人のmatchを除去して空き席を増やす
+  // ============================================================
+  async function removeFromMatching(deletedEntry) {
+    try {
+      // matches変数（onValueで常に最新）を使用
+      const currentMatches = [...matches];
+
+      if (deletedEntry.role === 'driver') {
+        // ドライバー削除：そのmatchを丸ごと削除
+        const driverMatch = currentMatches.find(m => m.driverID === deletedEntry.id);
+        if (driverMatch) {
+          await remove(ref(db, MATCHES_PATH + '/' + driverMatch.matchKey));
+        }
+      } else {
+        // 乗客削除：matchからriderを除去して空き席を再計算
+        for (const match of currentMatches) {
+          const riders = extractRiders(match);
+          const idx = riders.findIndex(r => r.id === deletedEntry.id);
+          if (idx !== -1) {
+            riders.splice(idx, 1);
+            // Firebaseから最新のドライバー情報を取得
+            const freshSnap3 = await get(entriesRef);
+            let driver = null;
+            freshSnap3.forEach(child => {
+              const v = child.val();
+              if (v.id === match.driverID) driver = { ...v, origin: (v.origin||'').trim() };
+            });
+            if (!driver) continue;
+            // 総定員 - 残り乗客数 = 空き席数
+            const totalSeats = parseCount(driver.count);
+            const usedSeats = riders.reduce((s, r) => s + (r.seats || 1), 0);
+            const newSeats = totalSeats - usedSeats;
+            await set(ref(db, MATCHES_PATH + '/' + match.matchKey),
+              buildMatchData(driver, riders, newSeats));
+            break;
+          }
+        }
+      }
+    } catch(e) {
+      console.error('removeFromMatching error:', e);
+    }
+  }
+
+  // ============================================================
+  // ドライバーの人数増加時：増えた分だけ空き席を更新
+  // ============================================================
+  async function updateDriverSeats(driverEntry, oldCount) {
+    try {
+      const matchSnap = await get(matchesRef);
+      const currentMatches = [];
+      matchSnap.forEach(child => currentMatches.push({ ...child.val(), matchKey: child.key }));
+      const driverMatch = currentMatches.find(m => m.driverID === driverEntry.id);
+      if (!driverMatch) return;
+      const addedSeats = parseCount(driverEntry.count) - oldCount;
+      if (addedSeats <= 0) return;
+      const currentRiders = extractRiders(driverMatch);
+      const newSeats = driverMatch.seats + addedSeats;
+      await set(ref(db, MATCHES_PATH + '/' + driverMatch.matchKey),
+        buildMatchData(driverEntry, currentRiders, newSeats));
+    } catch(e) {
+      console.error('updateDriverSeats error:', e);
+    }
+  }
+
+  // entries リアルタイム同期
+  onValue(entriesRef, (snapshot) => {
+    entries = [];
+    snapshot.forEach(child => {
+      const v = child.val();
+      entries.push({ ...v, origin: (v.origin||'').trim(), firebaseKey: child.key });
+    });
+    entries.sort((a, b) => (a.ts||'') < (b.ts||'') ? -1 : (a.ts||'') > (b.ts||'') ? 1 : 0);
+    updateSubTitle();
+    renderMatching();
+  });
+
+  // matches リアルタイム同期
+  onValue(matchesRef, (snapshot) => {
+    matches = [];
+    snapshot.forEach(child => {
+      matches.push({ ...child.val(), matchKey: child.key });
+    });
+    renderMatching();
+  });
+
+  // ページ起動時：matchesが空なら初回マッチング
+  async function initialize() {
+    const snap = await get(entriesRef);
+    const allEntries = [];
+    snap.forEach(child => {
+      const v = child.val();
+      allEntries.push({ ...v, origin: (v.origin||'').trim(), firebaseKey: child.key });
+    });
+    allEntries.sort((a, b) => (a.ts||'') < (b.ts||'') ? -1 : (a.ts||'') > (b.ts||'') ? 1 : 0);
+
+    // IDがない人に固定IDを付与
+    const existingIds = allEntries.filter(e => e.id).map(e => parseInt(e.id));
+    let nextId = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1;
+    for (const e of allEntries) {
+      if (!e.id) {
+        e.id = String(nextId).padStart(2, '0');
+        await set(ref(db, 'entries/' + e.firebaseKey + '/id'), e.id);
+        nextId++;
+      }
+    }
+
+    // matchesが空の場合のみ初回マッチング実行
+    const matchSnap = await get(matchesRef);
+    let matchCount = 0;
+    matchSnap.forEach(() => matchCount++);
+    if (matchCount === 0) {
+      await initMatching(allEntries);
+    }
+  }
+  const initializePromise = initialize();
+
+  function updateSubTitle() {
+    const sub = document.getElementById('list-sub');
+    if (!sub) return;
+    const d = entries.filter(e => e.role === 'driver').length;
+    const r = entries.filter(e => e.role === 'rider').length;
+    sub.textContent = 'ドライバー ' + d + '人 / 相乗り希望 ' + r + '人';
+  }
+
+  function buildCommentSection(people) {
+    const seen = new Set();
+    const unique = [];
+    [...people].reverse().forEach(p => {
+      if (p && p.note && !seen.has(p.firebaseKey)) { seen.add(p.firebaseKey); unique.push(p); }
+    });
+    if (!unique.length) return '';
+    const rows = unique.map(p =>
+      '<div class="comment-row"><span class="comment-name">' + p.name + '</span>：' + p.note + '<span class="comment-ts">（' + (p.ts||'') + '）</span></div>'
+    ).join('');
+    return '<div class="comment-section">' + rows + '</div>';
+  }
+
+  function renderMatching() {
+    const el = document.getElementById('match-result');
+    if (!el) return;
+    if (!entries.length) { el.innerHTML = '<div class="empty-msg">まだ登録がありません</div>'; return; }
+
+    const drivers = entries.filter(e => e.role === 'driver');
+    const sortedDrivers = [
+      ...drivers.filter(d => d.origin.includes('成東駅')),
+      ...drivers.filter(d => !d.origin.includes('成東駅'))
+    ];
+    const matchedRiderIds = new Set();
+    matches.forEach(m => extractRiders(m).forEach(r => matchedRiderIds.add(r.id)));
+
+    let html = '';
+    if (!sortedDrivers.length) {
+      html = '<div class="empty-msg">ドライバーの登録待ちです</div>';
+    } else {
+      html = sortedDrivers.map(driver => {
+        const totalSeats = parseCount(driver.count);
+        const driverMatch = matches.find(m => m.driverID === driver.id);
+        const assignedRiders = driverMatch ? extractRiders(driverMatch) : [];
+        const usedSeats = assignedRiders.reduce((s, r) => s + r.seats, 0);
+        const remaining = driverMatch ? driverMatch.seats : totalSeats;
+        const isFull = remaining <= 0;
+
+        const riderRows = assignedRiders.map(r => {
+          const entry = getEntryById(r.id);
+          if (!entry) return '';
+          const label = r.seats > 1 ? ' <span style="font-size:12px;color:#888">×' + r.seats + '</span>' : '';
+          return '<div class="rider-row"><span style="font-size:16px">💺</span><span class="rider-name">' + entry.name + label + '</span><span class="rider-origin">' + entry.origin + '</span></div>';
+        }).join('');
+
+        const emptyRows = !isFull ? Array.from({length: remaining}).map(() =>
+          '<div class="empty-seat"><span style="font-size:16px;opacity:0.25">💺</span><span class="empty-label">空き</span></div>'
+        ).join('') : '';
+
+        const badge = isFull
+          ? '<span class="seats-badge full-badge">満席</span>'
+          : '<span class="seats-badge open">あと ' + remaining + '席</span>';
+
+        const allPeople = [driver, ...assignedRiders.map(r => getEntryById(r.id)).filter(Boolean)];
+        const commentSection = buildCommentSection(allPeople);
+
+        return '<div class="match-card' + (isFull ? ' full' : '') + '">'
+          + '<div class="pickup-tag">📍 ' + driver.origin + '</div>'
+          + '<div class="driver-row"><span style="font-size:18px">🚗</span><span class="driver-name">' + driver.name + '</span>' + badge + '</div>'
+          + '<hr class="divider">'
+          + riderRows + emptyRows
+          + commentSection
+          + '</div>';
+      }).join('');
+    }
+
+    const unmatchedRiders = entries.filter(e => e.role === 'rider' && !matchedRiderIds.has(e.id));
+    if (unmatchedRiders.length) {
+      const rows = unmatchedRiders.map(r => {
+        const total = parseCount(r.count);
+        const label = total > 1 ? ' <span style="font-size:12px;color:#888">×' + total + '</span>' : '';
+        return '<div class="rider-row" style="padding:5px 0"><span style="font-size:16px">💺</span><span class="rider-name">' + r.name + label + '</span><span class="rider-origin">' + r.origin + '</span></div>';
+      }).join('');
+      const commentSection = buildCommentSection(unmatchedRiders);
+      html += '<div class="unmatched-box"><div class="unmatched-title">⏳ マッチング待ち（' + unmatchedRiders.length + '人）</div>' + rows + commentSection + '</div>';
+    }
+    el.innerHTML = html;
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.style.opacity = '1';
+    setTimeout(() => t.style.opacity = '0', 2000);
+  }
+
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  function resetForm() {
+    ['f-name','f-other'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('f-count').value = '';
+    document.getElementById('f-note').value  = '';
+    document.getElementById('other-wrap').style.display = 'none';
+    document.getElementById('f-error').style.display = 'none';
+    roleVal = ''; originVal = '';
+    ['btn-driver','btn-rider','btn-naruto','btn-other'].forEach(id => document.getElementById(id).className = 'toggle-btn');
+    document.getElementById('count-label').textContent = '乗せられる人数';
+  }
+
+  document.getElementById('btn-driver').addEventListener('click', () => { roleVal='driver'; document.getElementById('btn-driver').className='toggle-btn sel-green'; document.getElementById('btn-rider').className='toggle-btn'; document.getElementById('count-label').textContent='乗せられる人数'; });
+  document.getElementById('btn-rider').addEventListener('click', () => { roleVal='rider'; document.getElementById('btn-driver').className='toggle-btn'; document.getElementById('btn-rider').className='toggle-btn sel-blue'; document.getElementById('count-label').textContent='乗りたい人数'; });
+  document.getElementById('btn-naruto').addEventListener('click', () => { originVal='成東駅'; document.getElementById('btn-naruto').className='toggle-btn sel-amber'; document.getElementById('btn-other').className='toggle-btn'; document.getElementById('other-wrap').style.display='none'; });
+  document.getElementById('btn-other').addEventListener('click', () => { originVal='その他'; document.getElementById('btn-naruto').className='toggle-btn'; document.getElementById('btn-other').className='toggle-btn sel-amber'; document.getElementById('other-wrap').style.display='block'; });
+
+  document.getElementById('btn-submit').addEventListener('click', async () => {
+    const errEl = document.getElementById('f-error');
+    errEl.style.display = 'none';
+    const name  = document.getElementById('f-name').value.trim();
+    const count = document.getElementById('f-count').value;
+    const note  = document.getElementById('f-note').value.trim();
+    const other = document.getElementById('f-other').value.trim();
+    const err = !name ? 'お名前を入力してください' : !roleVal ? '役割を選択してください' : !originVal ? 'ピック場所を選択してください' : (originVal==='その他'&&!other) ? 'ピック場所の詳細を入力してください' : !count ? '人数を選択してください' : '';
+    if (err) { errEl.textContent = err; errEl.style.display = 'block'; return; }
+    // 初回マッチングの完了を待つ
+    console.log('① initializePromise待機開始');
+    await initializePromise;
+    console.log('② initializePromise完了');
+    const origin = originVal === 'その他' ? other : originVal;
+    // IDを付与（Firebaseから最新データを直接取得）
+    const freshIdSnap = await get(entriesRef);
+    const freshIds = [];
+    freshIdSnap.forEach(child => {
+      const id = child.val().id;
+      if (id) freshIds.push(parseInt(id));
+    });
+    const newId = String((freshIds.length > 0 ? Math.max(...freshIds) : 0) + 1).padStart(2, '0');
+    // push+setを1回にまとめる
+    const newRef = push(entriesRef);
+    await set(newRef, { name, role: roleVal, origin, count, note, ts: nowTs(), id: newId });
+    // 新規エントリーにマッチング追加
+    console.log('③ addMatchForNewEntry呼び出し開始 id:', newId, 'origin:', origin);
+    await addMatchForNewEntry({ id: newId, name, role: roleVal, origin, count, note });
+    console.log('④ addMatchForNewEntry完了');
+    showToast('登録しました！');
+    resetForm();
+    showScreen('screen-list');
+  });
+
+  document.getElementById('btn-view-only').addEventListener('click', () => showScreen('screen-list'));
+  document.getElementById('btn-go-form').addEventListener('click', () => showScreen('screen-form'));
+  document.getElementById('btn-refresh').addEventListener('click', () => { renderMatching(); showToast('最新データを表示中'); });
+
+  document.getElementById('btn-edit-open').addEventListener('click', () => {
+    document.getElementById('e-search').value = '';
+    document.getElementById('search-result').style.display = 'none';
+    document.getElementById('edit-form-card').style.display = 'none';
+    showScreen('screen-edit');
+  });
+  document.getElementById('btn-edit-back').addEventListener('click', () => showScreen('screen-list'));
+
+  document.getElementById('btn-search').addEventListener('click', () => {
+    const name = document.getElementById('e-search').value.trim();
+    if (!name) return;
+    const found = entries.find(e => e.name === name);
+    const resultEl = document.getElementById('search-result');
+    const formCard = document.getElementById('edit-form-card');
+    if (!found) {
+      resultEl.className = 'search-result notfound';
+      resultEl.textContent = '「' + name + '」の登録が見つかりません';
+      resultEl.style.display = 'block';
+      formCard.style.display = 'none';
+      return;
+    }
+    resultEl.className = 'search-result found';
+    resultEl.textContent = '「' + found.name + '」さんの登録が見つかりました（ID：' + found.id + '）';
+    resultEl.style.display = 'block';
+    editKey = found.firebaseKey;
+    editCurrentCount = parseCount(found.count);
+    const roleLabel = found.role === 'driver' ? '🚗 車を出せる' : '💺 相乗りしたい';
+    document.getElementById('edit-summary').innerHTML =
+      'ID：<strong>' + found.id + '</strong>　' + roleLabel + '<br><strong>' + found.name + '</strong>　📍 ' + found.origin + '　👥 ' + (found.count||'');
+    const countWrap = document.getElementById('e-count-wrap');
+    if (found.role === 'driver') {
+      countWrap.style.display = 'block';
+      document.getElementById('e-count-label').textContent = '乗せられる人数（現在：' + found.count + '、増加のみ可）';
+      const sel = document.getElementById('e-count');
+      sel.value = found.count || '';
+      Array.from(sel.options).forEach(opt => {
+        opt.disabled = opt.value !== '' && parseCount(opt.value) < editCurrentCount;
+      });
+    } else {
+      countWrap.style.display = 'none';
+    }
+    document.getElementById('e-note').value = found.note || '';
+    document.getElementById('e-error').style.display = 'none';
+    formCard.style.display = 'block';
+  });
+
+  document.getElementById('btn-save').addEventListener('click', async () => {
+    const entry = entries.find(e => e.firebaseKey === editKey);
+    if (!entry) return;
+    const note = document.getElementById('e-note').value.trim();
+    let count = entry.count;
+    if (entry.role === 'driver') {
+      const newCount = document.getElementById('e-count').value;
+      if (!newCount) { document.getElementById('e-error').textContent = '人数を選択してください'; document.getElementById('e-error').style.display = 'block'; return; }
+      if (parseCount(newCount) < editCurrentCount) { document.getElementById('e-error').textContent = '人数を減らすことはできません'; document.getElementById('e-error').style.display = 'block'; return; }
+      count = newCount;
+    }
+    await set(ref(db, 'entries/' + editKey), {
+      name: entry.name, role: entry.role, origin: entry.origin,
+      count: count, note: note, ts: entry.ts, id: entry.id
+    });
+    // ドライバーの人数増加時は空き席を更新
+    if (entry.role === 'driver' && parseCount(count) > editCurrentCount) {
+      await updateDriverSeats({ id: entry.id, name: entry.name, count: count }, editCurrentCount);
+    }
+    showToast('更新しました！');
+    showScreen('screen-list');
+  });
+
+  document.getElementById('btn-delete').addEventListener('click', () => {
+    document.getElementById('confirm-overlay').classList.add('active');
+  });
+  document.getElementById('confirm-cancel').addEventListener('click', () => {
+    document.getElementById('confirm-overlay').classList.remove('active');
+  });
+  document.getElementById('confirm-ok').addEventListener('click', async () => {
+    document.getElementById('confirm-overlay').classList.remove('active');
+    const entry = entries.find(e => e.firebaseKey === editKey);
+    if (!entry) return;
+    await removeFromMatching(entry);
+    await remove(ref(db, 'entries/' + editKey));
+    showToast('削除しました');
+    showScreen('screen-list');
+  });
+</script>
+</body>
+</html>
